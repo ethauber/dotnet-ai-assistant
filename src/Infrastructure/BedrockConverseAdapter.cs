@@ -14,19 +14,10 @@ public class BedrockConverseAdapter
                 new Message
                 {
                     Role = "user",
-                    Content = new List<ContentBlock>
-                    {
-                        new ContentBlock
-                        {
-                            Text = prompt
-                        }
-                    }
-                }
+                    Content = new List<ContentBlock> { new ContentBlock { Text = prompt } },
+                },
             },
-            InferenceConfig = new InferenceConfiguration
-            {
-                Temperature = 0
-            }
+            InferenceConfig = new InferenceConfiguration { Temperature = 0 },
         };
 
         return request;
