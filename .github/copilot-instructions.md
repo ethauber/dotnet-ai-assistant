@@ -13,7 +13,7 @@
 * **Dependency Rule:** Import `Core` and necessary external SDKs (e.g., `AWSSDK.BedrockRuntime`) to fulfill interface contracts.
 
 ### API (The Entry Point)
-* **Role:** Orchestrate requests and translate protocols (HTTP $\rightarrow$ Domain $\rightarrow$ HTTP).
+* **Role:** Orchestrate requests and translate protocols (HTTP -> Domain -> HTTP).
 * **Pattern:** Implement **ASP.NET MVC Controllers**.
 * **Delegation:** Delegate all business logic execution to Services or Mediators.
 * **Response Mapping:** Map domain results directly to appropriate HTTP Status Codes.
@@ -42,4 +42,4 @@
 * **Testing Strategy:**
     * **Unit Tests:** Validate `Core` logic in isolation using mocked interfaces.
     * **Integration Tests:** Utilize `WebApplicationFactory` to verify the full execution pipeline.
-    * **Mocking Scope:** Target mocks specifically at external I/O boundaries (e.g., AWS Bedrock client), allowing the Controller $\rightarrow$ Service $\rightarrow$ Adapter flow to execute as real implementations.
+    * **Mocking Scope:** Target mocks specifically at external I/O boundaries (e.g., AWS Bedrock client), allowing the Controller -> Service -> Adapter flow to execute as real implementations.
