@@ -3,6 +3,7 @@ namespace Api.Services;
 public interface IHealthStatusService
 {
     string GetStatus();
+    void SetDegraded(bool isDegraded);
 }
 
 public class HealthStatusService : IHealthStatusService
