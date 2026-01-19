@@ -8,7 +8,7 @@ public interface IHealthStatusService
 
 public class HealthStatusService : IHealthStatusService
 {
-    private bool _isDegraded;
+    private volatile bool _isDegraded;
 
     public void SetDegraded(bool isDegraded)
     {
