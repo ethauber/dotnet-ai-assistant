@@ -1,10 +1,6 @@
-namespace Api.Services;
+using Core.Services;
 
-public interface IHealthStatusService
-{
-    string GetStatus();
-    void SetDegraded(bool isDegraded);
-}
+namespace Infrastructure.Services;
 
 public class HealthStatusService : IHealthStatusService
 {

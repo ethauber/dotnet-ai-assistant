@@ -1,7 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
-using Api.Services;
+using Core.Services;
 using FluentAssertions;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,23 +21,26 @@ public class StatusEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task Status_Should_Return_Ok_When_System_Is_Healthy()
     {
         // Arrange
-        var client = _factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
+        var client = _factory
+            .WithWebHostBuilder(builder =>
             {
-                // Replace the service with a test version
-                var descriptor = services.SingleOrDefault(
-                    d => d.ServiceType == typeof(IHealthStatusService));
-                if (descriptor != null)
+                builder.ConfigureServices(services =>
                 {
-                    services.Remove(descriptor);
-                }
-                
-                var healthService = new HealthStatusService();
-                healthService.SetDegraded(false); // System is healthy
-                services.AddSingleton<IHealthStatusService>(healthService);
-            });
-        }).CreateClient();
+                    // Replace the service with a test version
+                    var descriptor = services.SingleOrDefault(d =>
+                        d.ServiceType == typeof(IHealthStatusService)
+                    );
+                    if (descriptor != null)
+                    {
+                        services.Remove(descriptor);
+                    }
+
+                    var healthService = new HealthStatusService();
+                    healthService.SetDegraded(false); // System is healthy
+                    services.AddSingleton<IHealthStatusService>(healthService);
+                });
+            })
+            .CreateClient();
 
         // Act
         var response = await client.GetAsync("/status");
@@ -52,23 +56,26 @@ public class StatusEndpointTests : IClassFixture<WebApplicationFactory<Program>>
     public async Task Status_Should_Return_Degraded_When_System_Is_Degraded()
     {
         // Arrange
-        var client = _factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
+        var client = _factory
+            .WithWebHostBuilder(builder =>
             {
-                // Replace the service with a test version
-                var descriptor = services.SingleOrDefault(
-                    d => d.ServiceType == typeof(IHealthStatusService));
-                if (descriptor != null)
+                builder.ConfigureServices(services =>
                 {
-                    services.Remove(descriptor);
-                }
-                
-                var healthService = new HealthStatusService();
-                healthService.SetDegraded(true); // System is degraded
-                services.AddSingleton<IHealthStatusService>(healthService);
-            });
-        }).CreateClient();
+                    // Replace the service with a test version
+                    var descriptor = services.SingleOrDefault(d =>
+                        d.ServiceType == typeof(IHealthStatusService)
+                    );
+                    if (descriptor != null)
+                    {
+                        services.Remove(descriptor);
+                    }
+
+                    var healthService = new HealthStatusService();
+                    healthService.SetDegraded(true); // System is degraded
+                    services.AddSingleton<IHealthStatusService>(healthService);
+                });
+            })
+            .CreateClient();
 
         // Act
         var response = await client.GetAsync("/status");
