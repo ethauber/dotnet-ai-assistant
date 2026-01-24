@@ -1,9 +1,11 @@
-using Api.Services;
+using Core.Services;
+using Infrastructure.Services;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddControllers();
 builder.Services.AddSingleton<IHealthStatusService, HealthStatusService>();
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -18,12 +20,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.MapGet("/status", (IHealthStatusService healthService) => 
-{
-    var status = healthService.GetStatus();
-    return Results.Ok(new { status });
-})
-.WithName("GetStatus");
+app.MapControllers();
 
 app.Run();
 
