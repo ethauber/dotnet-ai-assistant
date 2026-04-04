@@ -1,0 +1,18 @@
+rules:
+  - id: csharp-avoid-blocking-async
+    message: Avoid blocking on async with .Result or .Wait(). Prefer await.
+    severity: WARNING
+    languages:
+      - csharp
+    pattern-either:
+      - pattern: $X.Result
+      - pattern: $X.Wait(...)
+    metadata:
+      category: correctness
+      technology:
+        - dotnet
+        - csharp
+      confidence: medium
+      impact: medium
+      subcategory:
+        - audit
