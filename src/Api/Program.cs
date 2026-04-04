@@ -1,5 +1,6 @@
 using Core.Services;
 using Infrastructure.Services;
+using Microsoft.SemanticKernel;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,22 @@ builder.Services.AddTransient<IRepoAssistantService>(services =>
 
     return new RepoAssistantService(new HttpClient(), promptPath);
 });
+
+var semanticKernelModelId = builder.Configuration["SemanticKernel:ModelId"];
+var semanticKernelApiKey = builder.Configuration["SemanticKernel:ApiKey"];
+
+if (
+    !string.IsNullOrWhiteSpace(semanticKernelModelId)
+    && !string.IsNullOrWhiteSpace(semanticKernelApiKey)
+)
+{
+    builder.Services.AddOpenAIChatCompletion(
+        modelId: semanticKernelModelId,
+        apiKey: semanticKernelApiKey
+    );
+
+    builder.Services.AddScoped<IChatService, SemanticKernelChatService>();
+}
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();

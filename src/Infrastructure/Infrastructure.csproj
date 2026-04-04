@@ -5,6 +5,7 @@
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.BedrockRuntime" Version="4.0.14.6" />
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.74.0" />
   </ItemGroup>
 
   <PropertyGroup>
