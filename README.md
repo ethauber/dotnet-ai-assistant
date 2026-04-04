@@ -17,3 +17,13 @@ Then use:
 Prompt assets live in `prompts/`. The initial `repo-assistant.prompty` template is resolved from the repository root and used by the Infrastructure repo assistant service.
 
 See `docs/repo-assistant.md` for the request/response contract, runtime assumptions, and current limitations.
+
+## Code Quality
+
+This project uses [Semgrep](https://semgrep.dev/) for static analysis. Run a scan locally before pushing:
+
+```bash
+semgrep scan --config auto --config semgrep-rules.yml .
+```
+
+Custom rules live in `semgrep-rules.yml`. The CI/CD pipeline enforces these scans on all pull requests.
