@@ -7,6 +7,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddSingleton<IHealthStatusService, HealthStatusService>();
+builder.Services.AddTransient<IRepoAssistantService>(services =>
+{
+    var environment = services.GetRequiredService<IHostEnvironment>();
+    var promptPath = Path.GetFullPath(
+        Path.Combine(environment.ContentRootPath, "..", "..", "prompts", "repo-assistant.prompty")
+    );
+
+    return new RepoAssistantService(new HttpClient(), promptPath);
+});
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
