@@ -69,6 +69,22 @@ public sealed class RepoAssistantEndpointTests : IClassFixture<WebApplicationFac
         problem!.Title.Should().Be("Assistant service unavailable");
     }
 
+    [Fact]
+    public async Task Run_Should_Return_TooManyRequests_When_Model_Call_Is_Throttled()
+    {
+        var client = CreateClient(_ => throw new UpstreamServiceException("throttled", 429));
+
+        var response = await client.PostAsJsonAsync(
+            "/repo-assistant/run",
+            new RepoAssistantRequest { UserGoal = "Summarize the API" }
+        );
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
+
+        response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        problem.Should().NotBeNull();
+        problem!.Title.Should().Be("Assistant service busy");
+    }
+
     private HttpClient CreateClient(Func<string, string> responder)
     {
         return _factory

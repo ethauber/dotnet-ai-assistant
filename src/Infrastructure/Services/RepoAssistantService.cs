@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +14,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
 {
     private static readonly ConcurrentDictionary<string, CachedPromptyDocument> PromptCache = new();
     private static readonly SemaphoreSlim PromptCacheLock = new(1, 1);
+    private const int MaxThrottleRetries = 2;
 
     private readonly HttpClient _httpClient;
     private readonly string _promptyPath;
@@ -32,70 +34,118 @@ public sealed class RepoAssistantService : IRepoAssistantService
     {
         var prompt = await LoadPromptAsync(cancellationToken);
 
-        using var request = BuildRequest(prompt, userGoal, fileContext, projectArea);
-
-        try
+        for (var attempt = 0; attempt <= MaxThrottleRetries; attempt++)
         {
-            using var response = await _httpClient.SendAsync(request, cancellationToken);
-            var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new UpstreamServiceException(
-                    "The configured model endpoint returned a non-success response.",
-                    (int)response.StatusCode
-                );
-            }
+            using var request = BuildRequest(prompt, userGoal, fileContext, projectArea);
 
             try
             {
-                using var document = JsonDocument.Parse(responseText);
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
                 if (
-                    document.RootElement.TryGetProperty("choices", out var choices)
-                    && choices.GetArrayLength() > 0
+                    response.StatusCode == HttpStatusCode.TooManyRequests
+                    && attempt < MaxThrottleRetries
                 )
                 {
-                    var firstChoice = choices[0];
+                    await Task.Delay(GetRetryDelay(response, attempt), cancellationToken);
+                    continue;
+                }
+
+                var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    throw new UpstreamServiceException(
+                        "The configured model endpoint is currently throttling requests.",
+                        (int)response.StatusCode
+                    );
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new UpstreamServiceException(
+                        "The configured model endpoint returned a non-success response.",
+                        (int)response.StatusCode
+                    );
+                }
+
+                try
+                {
+                    using var document = JsonDocument.Parse(responseText);
                     if (
-                        firstChoice.TryGetProperty("message", out var message)
-                        && message.TryGetProperty("content", out var content)
+                        document.RootElement.TryGetProperty("choices", out var choices)
+                        && choices.GetArrayLength() > 0
                     )
                     {
-                        return content.GetString() ?? string.Empty;
-                    }
+                        var firstChoice = choices[0];
+                        if (
+                            firstChoice.TryGetProperty("message", out var message)
+                            && message.TryGetProperty("content", out var content)
+                        )
+                        {
+                            var assistantContent = content.GetString();
+                            if (!string.IsNullOrWhiteSpace(assistantContent))
+                            {
+                                return assistantContent;
+                            }
+                        }
 
-                    if (firstChoice.TryGetProperty("text", out var text))
-                    {
-                        return text.GetString() ?? string.Empty;
+                        if (firstChoice.TryGetProperty("text", out var text))
+                        {
+                            var assistantText = text.GetString();
+                            if (!string.IsNullOrWhiteSpace(assistantText))
+                            {
+                                return assistantText;
+                            }
+                        }
                     }
                 }
+                catch (JsonException exception)
+                {
+                    throw new UpstreamServiceException(
+                        "The configured model endpoint returned an unexpected response payload.",
+                        innerException: exception
+                    );
+                }
             }
-            catch (JsonException exception)
+            catch (HttpRequestException exception)
             {
                 throw new UpstreamServiceException(
-                    "The configured model endpoint returned an unexpected response payload.",
+                    "The configured model endpoint is currently unavailable.",
                     innerException: exception
                 );
             }
-        }
-        catch (HttpRequestException exception)
-        {
-            throw new UpstreamServiceException(
-                "The configured model endpoint is currently unavailable.",
-                innerException: exception
-            );
-        }
-        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new UpstreamServiceException(
-                "The configured model endpoint did not respond in time.",
-                innerException: exception
-            );
+            catch (TaskCanceledException exception)
+                when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new UpstreamServiceException(
+                    "The configured model endpoint did not respond in time.",
+                    innerException: exception
+                );
+            }
         }
 
         throw new UpstreamServiceException(
             "The configured model endpoint returned no assistant content."
         );
+    }
+
+    private static TimeSpan GetRetryDelay(HttpResponseMessage response, int attempt)
+    {
+        if (response.Headers.RetryAfter?.Delta is TimeSpan retryAfterDelta)
+        {
+            return retryAfterDelta;
+        }
+
+        if (response.Headers.RetryAfter?.Date is DateTimeOffset retryAfterDate)
+        {
+            var delay = retryAfterDate - DateTimeOffset.UtcNow;
+            if (delay > TimeSpan.Zero)
+            {
+                return delay;
+            }
+        }
+
+        return TimeSpan.FromMilliseconds(Math.Min(500 * Math.Pow(2, attempt), 2000));
     }
 
     private HttpRequestMessage BuildRequest(

@@ -34,6 +34,7 @@ public sealed class RepoAssistantController : ControllerBase
     [ProducesResponseType(typeof(RepoAssistantResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<RepoAssistantResponse>> RunAsync(
         [FromBody] RepoAssistantRequest request,
@@ -67,6 +68,16 @@ public sealed class RepoAssistantController : ControllerBase
                 "Repo assistant upstream call failed with status code {StatusCode}.",
                 exception.StatusCode
             );
+
+            if (exception.StatusCode == StatusCodes.Status429TooManyRequests)
+            {
+                return Problem(
+                    title: "Assistant service busy",
+                    detail: "The repo assistant is temporarily throttled by the configured model endpoint.",
+                    statusCode: StatusCodes.Status429TooManyRequests
+                );
+            }
+
             return Problem(
                 title: "Assistant service unavailable",
                 detail: "The repo assistant could not complete the request with the configured model endpoint.",

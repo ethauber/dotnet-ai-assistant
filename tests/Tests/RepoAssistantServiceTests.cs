@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Core.Exceptions;
@@ -12,18 +13,7 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Load_Prompt_And_Return_Assistant_Content()
     {
-        var promptPath = Path.GetFullPath(
-            Path.Combine(
-                AppContext.BaseDirectory,
-                "..",
-                "..",
-                "..",
-                "..",
-                "..",
-                "prompts",
-                "repo-assistant.prompty"
-            )
-        );
+        var promptPath = GetPromptPath();
         string? requestPayload = null;
         var handler = new StubHttpMessageHandler(
             async (request, cancellationToken) =>
@@ -136,6 +126,105 @@ public sealed class RepoAssistantServiceTests
                             {
                                 Content = new StringContent(
                                     "{\"choices\":[]}",
+                                    Encoding.UTF8,
+                                    "application/json"
+                                ),
+                            }
+                        )
+                )
+            ),
+            GetPromptPath()
+        );
+
+        var act = () => service.RunAsync("Summarize the repo");
+
+        await act.Should()
+            .ThrowAsync<UpstreamServiceException>()
+            .WithMessage("*no assistant content*");
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_Retry_When_Upstream_Is_Throttled()
+    {
+        var attemptCount = 0;
+        var service = new RepoAssistantService(
+            new HttpClient(
+                new StubHttpMessageHandler(
+                    (_, _) =>
+                    {
+                        attemptCount++;
+                        if (attemptCount < 3)
+                        {
+                            var throttledResponse = new HttpResponseMessage(
+                                HttpStatusCode.TooManyRequests
+                            );
+                            throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(
+                                TimeSpan.Zero
+                            );
+                            return Task.FromResult(throttledResponse);
+                        }
+
+                        return Task.FromResult(
+                            new HttpResponseMessage(HttpStatusCode.OK)
+                            {
+                                Content = new StringContent(
+                                    "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
+                                    Encoding.UTF8,
+                                    "application/json"
+                                ),
+                            }
+                        );
+                    }
+                )
+            ),
+            GetPromptPath()
+        );
+
+        var result = await service.RunAsync("Summarize the repo");
+
+        result.Should().Be("assistant reply");
+        attemptCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_Throw_When_Upstream_Remains_Throttled()
+    {
+        var service = new RepoAssistantService(
+            new HttpClient(
+                new StubHttpMessageHandler(
+                    (_, _) =>
+                    {
+                        var throttledResponse = new HttpResponseMessage(
+                            HttpStatusCode.TooManyRequests
+                        );
+                        throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(
+                            TimeSpan.Zero
+                        );
+                        return Task.FromResult(throttledResponse);
+                    }
+                )
+            ),
+            GetPromptPath()
+        );
+
+        var act = () => service.RunAsync("Summarize the repo");
+
+        var exception = await act.Should().ThrowAsync<UpstreamServiceException>();
+        exception.Which.StatusCode.Should().Be((int)HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_Throw_When_Upstream_Returns_Whitespace_Content()
+    {
+        var service = new RepoAssistantService(
+            new HttpClient(
+                new StubHttpMessageHandler(
+                    (_, _) =>
+                        Task.FromResult(
+                            new HttpResponseMessage(HttpStatusCode.OK)
+                            {
+                                Content = new StringContent(
+                                    "{\"choices\":[{\"message\":{\"content\":\"   \"}}]}",
                                     Encoding.UTF8,
                                     "application/json"
                                 ),

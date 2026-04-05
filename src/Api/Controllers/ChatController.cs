@@ -24,7 +24,7 @@ public class ChatController : ControllerBase
     /// <response code="503">Chat service is not configured or temporarily unavailable.</response>
     [HttpPost]
     [ProducesResponseType(typeof(ChatResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<ChatResponse>> Post(
         [FromBody] ChatRequest request,
