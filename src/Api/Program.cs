@@ -42,6 +42,10 @@ if (
 
     builder.Services.AddScoped<IChatService, SemanticKernelChatService>();
 }
+else
+{
+    builder.Services.AddScoped<IChatService, UnconfiguredChatService>();
+}
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();

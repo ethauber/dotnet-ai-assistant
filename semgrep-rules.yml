@@ -5,7 +5,12 @@ rules:
     languages:
       - csharp
     pattern-either:
-      - pattern: $X.Result
+      - patterns:
+          - pattern: $TASK.Result
+          - metavariable-regex:
+              metavariable: $TASK
+              regex: '(?:^Task(?:\.|<)|^ValueTask(?:\.|<)|.*Async\(.*\)$|.*(?:task|Task|valueTask|ValueTask)$|.*(?:task|Task|valueTask|ValueTask)\.[A-Za-z_].*)'
+      - pattern: $X.GetAwaiter().GetResult()
       - pattern: $X.Wait(...)
     paths:
       exclude:

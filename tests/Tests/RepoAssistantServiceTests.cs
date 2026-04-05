@@ -25,18 +25,20 @@ public sealed class RepoAssistantServiceTests
             )
         );
         string? requestPayload = null;
-        var handler = new StubHttpMessageHandler(request =>
-        {
-            requestPayload = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
-            return new HttpResponseMessage(HttpStatusCode.OK)
+        var handler = new StubHttpMessageHandler(
+            async (request, cancellationToken) =>
             {
-                Content = new StringContent(
-                    "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
-                    Encoding.UTF8,
-                    "application/json"
-                ),
-            };
-        });
+                requestPayload = await request.Content!.ReadAsStringAsync(cancellationToken);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
+                        Encoding.UTF8,
+                        "application/json"
+                    ),
+                };
+            }
+        );
         var service = new RepoAssistantService(new HttpClient(handler), promptPath);
 
         var result = await service.RunAsync(
@@ -63,7 +65,9 @@ public sealed class RepoAssistantServiceTests
     {
         var service = new RepoAssistantService(
             new HttpClient(
-                new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))
+                new StubHttpMessageHandler(
+                    (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))
+                )
             ),
             "missing.prompty"
         );
@@ -78,7 +82,9 @@ public sealed class RepoAssistantServiceTests
     {
         var service = new RepoAssistantService(
             new HttpClient(
-                new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadGateway))
+                new StubHttpMessageHandler(
+                    (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway))
+                )
             ),
             GetPromptPath()
         );
@@ -94,10 +100,19 @@ public sealed class RepoAssistantServiceTests
     {
         var service = new RepoAssistantService(
             new HttpClient(
-                new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent("not json", Encoding.UTF8, "application/json"),
-                })
+                new StubHttpMessageHandler(
+                    (_, _) =>
+                        Task.FromResult(
+                            new HttpResponseMessage(HttpStatusCode.OK)
+                            {
+                                Content = new StringContent(
+                                    "not json",
+                                    Encoding.UTF8,
+                                    "application/json"
+                                ),
+                            }
+                        )
+                )
             ),
             GetPromptPath()
         );
@@ -114,14 +129,19 @@ public sealed class RepoAssistantServiceTests
     {
         var service = new RepoAssistantService(
             new HttpClient(
-                new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(
-                        "{\"choices\":[]}",
-                        Encoding.UTF8,
-                        "application/json"
-                    ),
-                })
+                new StubHttpMessageHandler(
+                    (_, _) =>
+                        Task.FromResult(
+                            new HttpResponseMessage(HttpStatusCode.OK)
+                            {
+                                Content = new StringContent(
+                                    "{\"choices\":[]}",
+                                    Encoding.UTF8,
+                                    "application/json"
+                                ),
+                            }
+                        )
+                )
             ),
             GetPromptPath()
         );
@@ -151,9 +171,15 @@ public sealed class RepoAssistantServiceTests
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
+        private readonly Func<
+            HttpRequestMessage,
+            CancellationToken,
+            Task<HttpResponseMessage>
+        > _responder;
 
-        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responder)
+        public StubHttpMessageHandler(
+            Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder
+        )
         {
             _responder = responder;
         }
@@ -163,7 +189,7 @@ public sealed class RepoAssistantServiceTests
             CancellationToken cancellationToken
         )
         {
-            return Task.FromResult(_responder(request));
+            return _responder(request, cancellationToken);
         }
     }
 }
