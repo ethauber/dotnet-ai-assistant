@@ -303,7 +303,11 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
         private static string ExtractYamlValue(string yaml, string key)
         {
-            var match = Regex.Match(yaml, $"{Regex.Escape(key)}:\\s*(.+)$", RegexOptions.Multiline);
+            var match = Regex.Match(
+                yaml,
+                $"^\\s*{Regex.Escape(key)}:\\s*(.+)$",
+                RegexOptions.Multiline
+            );
             return match.Success ? match.Groups[1].Value.Trim().Trim('"') : string.Empty;
         }
 
