@@ -7,12 +7,52 @@ rules:
     pattern-either:
       - pattern: $X.Result
       - pattern: $X.Wait(...)
+    paths:
+      exclude:
+        - bin/
+        - obj/
+        - TestResults/
+        - .git/
     metadata:
       category: correctness
       technology:
         - dotnet
         - csharp
-      confidence: medium
-      impact: medium
-      subcategory:
-        - audit
+
+  - id: csharp-avoid-task-run-inside-async
+    message: Avoid Task.Run inside async flows unless there is a clear CPU-bound reason.
+    severity: INFO
+    languages:
+      - csharp
+    pattern: Task.Run(...)
+    paths:
+      exclude:
+        - bin/
+        - obj/
+        - TestResults/
+        - .git/
+    metadata:
+      category: maintainability
+      technology:
+        - dotnet
+        - csharp
+
+  - id: csharp-empty-catch
+    message: Empty catch block found. Handle, log, or justify it.
+    severity: WARNING
+    languages:
+      - csharp
+    pattern: |
+      catch ($EX) {
+      }
+    paths:
+      exclude:
+        - bin/
+        - obj/
+        - TestResults/
+        - .git/
+    metadata:
+      category: quality
+      technology:
+        - dotnet
+        - csharp
