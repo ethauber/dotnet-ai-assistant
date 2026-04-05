@@ -108,6 +108,10 @@ public sealed class RepoAssistantService : IRepoAssistantService
                         innerException: exception
                     );
                 }
+
+                throw new UpstreamServiceException(
+                    "The configured model endpoint returned no assistant content."
+                );
             }
             catch (HttpRequestException exception)
             {
