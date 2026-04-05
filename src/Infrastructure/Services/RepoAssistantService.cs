@@ -50,8 +50,6 @@ public sealed class RepoAssistantService : IRepoAssistantService
                     continue;
                 }
 
-                var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
-
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
                     throw new UpstreamServiceException(
@@ -67,6 +65,10 @@ public sealed class RepoAssistantService : IRepoAssistantService
                         (int)response.StatusCode
                     );
                 }
+
+                var responseText = response.Content is not null
+                    ? await response.Content.ReadAsStringAsync(cancellationToken)
+                    : string.Empty;
 
                 try
                 {
