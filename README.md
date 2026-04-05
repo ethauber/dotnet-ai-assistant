@@ -137,7 +137,7 @@ This project uses [Semgrep](https://semgrep.dev/) for static analysis. Run a sca
 semgrep scan --config auto --config semgrep-rules.yml .
 ```
 
-Custom rules live in `semgrep-rules.yml`. The CI/CD pipeline enforces these scans on all pull requests.
+Custom rules live in `semgrep-rules.yml`. Treat these scans as a local pre-push requirement for now.
 
 ## Project Structure
 
