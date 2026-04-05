@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +11,9 @@ namespace Infrastructure.Services;
 
 public sealed class RepoAssistantService : IRepoAssistantService
 {
+    private static readonly ConcurrentDictionary<string, CachedPromptyDocument> PromptCache = new();
+    private static readonly SemaphoreSlim PromptCacheLock = new(1, 1);
+
     private readonly HttpClient _httpClient;
     private readonly string _promptyPath;
 
@@ -25,13 +30,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
         CancellationToken cancellationToken = default
     )
     {
-        if (!File.Exists(_promptyPath))
-        {
-            throw new PromptTemplateNotFoundException(_promptyPath);
-        }
-
-        var rawPrompt = await File.ReadAllTextAsync(_promptyPath, cancellationToken);
-        var prompt = PromptyDocument.Parse(rawPrompt);
+        var prompt = await LoadPromptAsync(cancellationToken);
 
         using var request = BuildRequest(prompt, userGoal, fileContext, projectArea);
         using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -88,13 +87,14 @@ public sealed class RepoAssistantService : IRepoAssistantService
         string? projectArea
     )
     {
+        var renderedPrompt = prompt.RenderBody(userGoal, fileContext, projectArea);
         var body = JsonSerializer.Serialize(
             new
             {
                 model = prompt.Model,
                 messages = new[]
                 {
-                    new { role = "system", content = prompt.Body },
+                    new { role = "system", content = renderedPrompt },
                     new
                     {
                         role = "user",
@@ -117,6 +117,46 @@ public sealed class RepoAssistantService : IRepoAssistantService
         }
 
         return request;
+    }
+
+    private async Task<PromptyDocument> LoadPromptAsync(CancellationToken cancellationToken)
+    {
+        if (!File.Exists(_promptyPath))
+        {
+            throw new PromptTemplateNotFoundException(_promptyPath);
+        }
+
+        var lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
+        if (
+            PromptCache.TryGetValue(_promptyPath, out var cachedPrompt)
+            && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
+        )
+        {
+            return cachedPrompt.Document;
+        }
+
+        await PromptCacheLock.WaitAsync(cancellationToken);
+        try
+        {
+            lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
+            if (
+                PromptCache.TryGetValue(_promptyPath, out cachedPrompt)
+                && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
+            )
+            {
+                return cachedPrompt.Document;
+            }
+
+            var rawPrompt = await File.ReadAllTextAsync(_promptyPath, cancellationToken);
+            var prompt = PromptyDocument.Parse(rawPrompt);
+            PromptCache[_promptyPath] = new CachedPromptyDocument(prompt, lastWriteTimeUtc);
+
+            return prompt;
+        }
+        finally
+        {
+            PromptCacheLock.Release();
+        }
     }
 
     private static string BuildUserMessage(
@@ -184,6 +224,13 @@ public sealed class RepoAssistantService : IRepoAssistantService
             );
         }
 
+        public string RenderBody(string userGoal, string? fileContext, string? projectArea)
+        {
+            return Body.Replace("{user_goal}", userGoal, StringComparison.Ordinal)
+                .Replace("{file_context}", fileContext ?? string.Empty, StringComparison.Ordinal)
+                .Replace("{project_area}", projectArea ?? string.Empty, StringComparison.Ordinal);
+        }
+
         private static string ExtractYamlValue(string yaml, string key)
         {
             var match = Regex.Match(yaml, $"{Regex.Escape(key)}:\\s*(.+)$", RegexOptions.Multiline);
@@ -192,7 +239,14 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
         private static double ParseDouble(string value, double fallback)
         {
-            return double.TryParse(value, out var parsed) ? parsed : fallback;
+            return double.TryParse(
+                value,
+                NumberStyles.Float | NumberStyles.AllowThousands,
+                CultureInfo.InvariantCulture,
+                out var parsed
+            )
+                ? parsed
+                : fallback;
         }
 
         private static int ParseInt(string value, int fallback)
@@ -200,4 +254,9 @@ public sealed class RepoAssistantService : IRepoAssistantService
             return int.TryParse(value, out var parsed) ? parsed : fallback;
         }
     }
+
+    private sealed record CachedPromptyDocument(
+        PromptyDocument Document,
+        DateTime LastWriteTimeUtc
+    );
 }

@@ -8,14 +8,23 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddSingleton<IHealthStatusService, HealthStatusService>();
+builder.Services.AddHttpClient(
+    "RepoAssistant",
+    client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+    }
+);
+
 builder.Services.AddTransient<IRepoAssistantService>(services =>
 {
+    var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
     var environment = services.GetRequiredService<IHostEnvironment>();
     var promptPath = Path.GetFullPath(
         Path.Combine(environment.ContentRootPath, "..", "..", "prompts", "repo-assistant.prompty")
     );
 
-    return new RepoAssistantService(new HttpClient(), promptPath);
+    return new RepoAssistantService(httpClientFactory.CreateClient("RepoAssistant"), promptPath);
 });
 
 var semanticKernelModelId = builder.Configuration["SemanticKernel:ModelId"];

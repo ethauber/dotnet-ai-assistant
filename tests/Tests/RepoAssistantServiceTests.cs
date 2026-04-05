@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Core.Exceptions;
 using FluentAssertions;
 using Infrastructure.Services;
@@ -23,19 +24,38 @@ public sealed class RepoAssistantServiceTests
                 "repo-assistant.prompty"
             )
         );
-        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        string? requestPayload = null;
+        var handler = new StubHttpMessageHandler(request =>
         {
-            Content = new StringContent(
-                "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
-                Encoding.UTF8,
-                "application/json"
-            ),
+            requestPayload = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
+                    Encoding.UTF8,
+                    "application/json"
+                ),
+            };
         });
         var service = new RepoAssistantService(new HttpClient(handler), promptPath);
 
-        var result = await service.RunAsync("Summarize the repo", projectArea: "api");
+        var result = await service.RunAsync(
+            "Summarize the repo",
+            fileContext: "StatusController.cs",
+            projectArea: "api"
+        );
 
         result.Should().Be("assistant reply");
+        requestPayload.Should().NotBeNull();
+
+        using var requestDocument = JsonDocument.Parse(requestPayload!);
+        var messages = requestDocument.RootElement.GetProperty("messages");
+        var systemMessage = messages[0].GetProperty("content").GetString();
+
+        systemMessage.Should().Contain("Summarize the repo");
+        systemMessage.Should().Contain("StatusController.cs");
+        systemMessage.Should().Contain("api");
+        systemMessage.Should().NotContain("{user_goal}");
     }
 
     [Fact]
@@ -51,6 +71,82 @@ public sealed class RepoAssistantServiceTests
         var act = () => service.RunAsync("Summarize the repo");
 
         await act.Should().ThrowAsync<PromptTemplateNotFoundException>();
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_Throw_When_Upstream_Returns_NonSuccess_Status()
+    {
+        var service = new RepoAssistantService(
+            new HttpClient(
+                new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadGateway))
+            ),
+            GetPromptPath()
+        );
+
+        var act = () => service.RunAsync("Summarize the repo");
+
+        var exception = await act.Should().ThrowAsync<UpstreamServiceException>();
+        exception.Which.StatusCode.Should().Be((int)HttpStatusCode.BadGateway);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_Throw_When_Upstream_Returns_Invalid_Json()
+    {
+        var service = new RepoAssistantService(
+            new HttpClient(
+                new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("not json", Encoding.UTF8, "application/json"),
+                })
+            ),
+            GetPromptPath()
+        );
+
+        var act = () => service.RunAsync("Summarize the repo");
+
+        await act.Should()
+            .ThrowAsync<UpstreamServiceException>()
+            .Where(exception => exception.InnerException is JsonException);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_Throw_When_Upstream_Returns_No_Assistant_Content()
+    {
+        var service = new RepoAssistantService(
+            new HttpClient(
+                new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "{\"choices\":[]}",
+                        Encoding.UTF8,
+                        "application/json"
+                    ),
+                })
+            ),
+            GetPromptPath()
+        );
+
+        var act = () => service.RunAsync("Summarize the repo");
+
+        await act.Should()
+            .ThrowAsync<UpstreamServiceException>()
+            .WithMessage("*no assistant content*");
+    }
+
+    private static string GetPromptPath()
+    {
+        return Path.GetFullPath(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                "..",
+                "..",
+                "..",
+                "prompts",
+                "repo-assistant.prompty"
+            )
+        );
     }
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler

@@ -32,10 +32,11 @@ public sealed class RepoAssistantController : ControllerBase
     /// <returns>The assistant reply when execution succeeds.</returns>
     [HttpPost("run")]
     [ProducesResponseType(typeof(RepoAssistantResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<RepoAssistantResponse>> RunAsync(
-        RepoAssistantRequest request,
+        [FromBody] RepoAssistantRequest request,
         CancellationToken cancellationToken
     )
     {
