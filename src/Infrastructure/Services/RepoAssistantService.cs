@@ -33,44 +33,62 @@ public sealed class RepoAssistantService : IRepoAssistantService
         var prompt = await LoadPromptAsync(cancellationToken);
 
         using var request = BuildRequest(prompt, userGoal, fileContext, projectArea);
-        using var response = await _httpClient.SendAsync(request, cancellationToken);
-        var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new UpstreamServiceException(
-                "The configured model endpoint returned a non-success response.",
-                (int)response.StatusCode
-            );
-        }
 
         try
         {
-            using var document = JsonDocument.Parse(responseText);
-            if (
-                document.RootElement.TryGetProperty("choices", out var choices)
-                && choices.GetArrayLength() > 0
-            )
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
             {
-                var firstChoice = choices[0];
+                throw new UpstreamServiceException(
+                    "The configured model endpoint returned a non-success response.",
+                    (int)response.StatusCode
+                );
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(responseText);
                 if (
-                    firstChoice.TryGetProperty("message", out var message)
-                    && message.TryGetProperty("content", out var content)
+                    document.RootElement.TryGetProperty("choices", out var choices)
+                    && choices.GetArrayLength() > 0
                 )
                 {
-                    return content.GetString() ?? string.Empty;
-                }
+                    var firstChoice = choices[0];
+                    if (
+                        firstChoice.TryGetProperty("message", out var message)
+                        && message.TryGetProperty("content", out var content)
+                    )
+                    {
+                        return content.GetString() ?? string.Empty;
+                    }
 
-                if (firstChoice.TryGetProperty("text", out var text))
-                {
-                    return text.GetString() ?? string.Empty;
+                    if (firstChoice.TryGetProperty("text", out var text))
+                    {
+                        return text.GetString() ?? string.Empty;
+                    }
                 }
             }
+            catch (JsonException exception)
+            {
+                throw new UpstreamServiceException(
+                    "The configured model endpoint returned an unexpected response payload.",
+                    innerException: exception
+                );
+            }
         }
-        catch (JsonException exception)
+        catch (HttpRequestException exception)
         {
             throw new UpstreamServiceException(
-                "The configured model endpoint returned an unexpected response payload.",
+                "The configured model endpoint is currently unavailable.",
+                innerException: exception
+            );
+        }
+        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new UpstreamServiceException(
+                "The configured model endpoint did not respond in time.",
                 innerException: exception
             );
         }
