@@ -40,78 +40,87 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
             try
             {
+                TimeSpan? retryDelay = null;
+
                 using var response = await _httpClient.SendAsync(request, cancellationToken);
                 if (
                     response.StatusCode == HttpStatusCode.TooManyRequests
                     && attempt < MaxThrottleRetries
                 )
                 {
-                    await Task.Delay(GetRetryDelay(response, attempt), cancellationToken);
-                    continue;
+                    retryDelay = GetRetryDelay(response, attempt);
                 }
-
-                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                else
                 {
-                    throw new UpstreamServiceException(
-                        "The configured model endpoint is currently throttling requests.",
-                        (int)response.StatusCode
-                    );
-                }
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    throw new UpstreamServiceException(
-                        "The configured model endpoint returned a non-success response.",
-                        (int)response.StatusCode
-                    );
-                }
-
-                var responseText = response.Content is not null
-                    ? await response.Content.ReadAsStringAsync(cancellationToken)
-                    : string.Empty;
-
-                try
-                {
-                    using var document = JsonDocument.Parse(responseText);
-                    if (
-                        document.RootElement.TryGetProperty("choices", out var choices)
-                        && choices.GetArrayLength() > 0
-                    )
+                    if (response.StatusCode == HttpStatusCode.TooManyRequests)
                     {
-                        var firstChoice = choices[0];
+                        throw new UpstreamServiceException(
+                            "The configured model endpoint is currently throttling requests.",
+                            (int)response.StatusCode
+                        );
+                    }
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        throw new UpstreamServiceException(
+                            "The configured model endpoint returned a non-success response.",
+                            (int)response.StatusCode
+                        );
+                    }
+
+                    var responseText = response.Content is not null
+                        ? await response.Content.ReadAsStringAsync(cancellationToken)
+                        : string.Empty;
+
+                    try
+                    {
+                        using var document = JsonDocument.Parse(responseText);
                         if (
-                            firstChoice.TryGetProperty("message", out var message)
-                            && message.TryGetProperty("content", out var content)
+                            document.RootElement.TryGetProperty("choices", out var choices)
+                            && choices.GetArrayLength() > 0
                         )
                         {
-                            var assistantContent = content.GetString();
-                            if (!string.IsNullOrWhiteSpace(assistantContent))
+                            var firstChoice = choices[0];
+                            if (
+                                firstChoice.TryGetProperty("message", out var message)
+                                && message.TryGetProperty("content", out var content)
+                            )
                             {
-                                return assistantContent;
+                                var assistantContent = content.GetString();
+                                if (!string.IsNullOrWhiteSpace(assistantContent))
+                                {
+                                    return assistantContent;
+                                }
                             }
-                        }
 
-                        if (firstChoice.TryGetProperty("text", out var text))
-                        {
-                            var assistantText = text.GetString();
-                            if (!string.IsNullOrWhiteSpace(assistantText))
+                            if (firstChoice.TryGetProperty("text", out var text))
                             {
-                                return assistantText;
+                                var assistantText = text.GetString();
+                                if (!string.IsNullOrWhiteSpace(assistantText))
+                                {
+                                    return assistantText;
+                                }
                             }
                         }
                     }
-                }
-                catch (JsonException exception)
-                {
+                    catch (JsonException exception)
+                    {
+                        throw new UpstreamServiceException(
+                            "The configured model endpoint returned an unexpected response payload.",
+                            innerException: exception
+                        );
+                    }
+
                     throw new UpstreamServiceException(
-                        "The configured model endpoint returned an unexpected response payload.",
-                        innerException: exception
+                        "The configured model endpoint returned no assistant content."
                     );
                 }
 
-                throw new UpstreamServiceException(
-                    "The configured model endpoint returned no assistant content."
-                );
+                if (retryDelay is not null)
+                {
+                    await Task.Delay(retryDelay.Value, cancellationToken);
+                    continue;
+                }
             }
             catch (HttpRequestException exception)
             {
