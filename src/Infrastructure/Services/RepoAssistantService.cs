@@ -204,41 +204,56 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
     private async Task<PromptyDocument> LoadPromptAsync(CancellationToken cancellationToken)
     {
-        if (!File.Exists(_promptyPath))
-        {
-            throw new PromptTemplateNotFoundException(_promptyPath);
-        }
-
-        var lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
-        if (
-            PromptCache.TryGetValue(_promptyPath, out var cachedPrompt)
-            && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
-        )
-        {
-            return cachedPrompt.Document;
-        }
-
-        await PromptCacheLock.WaitAsync(cancellationToken);
         try
         {
-            lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
+            if (!File.Exists(_promptyPath))
+            {
+                throw new PromptTemplateNotFoundException(_promptyPath);
+            }
+
+            var lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
             if (
-                PromptCache.TryGetValue(_promptyPath, out cachedPrompt)
+                PromptCache.TryGetValue(_promptyPath, out var cachedPrompt)
                 && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
             )
             {
                 return cachedPrompt.Document;
             }
 
-            var rawPrompt = await File.ReadAllTextAsync(_promptyPath, cancellationToken);
-            var prompt = PromptyDocument.Parse(rawPrompt);
-            PromptCache[_promptyPath] = new CachedPromptyDocument(prompt, lastWriteTimeUtc);
+            await PromptCacheLock.WaitAsync(cancellationToken);
+            try
+            {
+                lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
+                if (
+                    PromptCache.TryGetValue(_promptyPath, out cachedPrompt)
+                    && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
+                )
+                {
+                    return cachedPrompt.Document;
+                }
 
-            return prompt;
+                var rawPrompt = await File.ReadAllTextAsync(_promptyPath, cancellationToken);
+                var prompt = PromptyDocument.Parse(rawPrompt);
+                PromptCache[_promptyPath] = new CachedPromptyDocument(prompt, lastWriteTimeUtc);
+
+                return prompt;
+            }
+            finally
+            {
+                PromptCacheLock.Release();
+            }
         }
-        finally
+        catch (FileNotFoundException)
         {
-            PromptCacheLock.Release();
+            throw new PromptTemplateNotFoundException(_promptyPath);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            throw new PromptTemplateNotFoundException(_promptyPath);
+        }
+        catch (IOException)
+        {
+            throw new PromptTemplateNotFoundException(_promptyPath);
         }
     }
 
