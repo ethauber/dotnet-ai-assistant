@@ -20,10 +20,27 @@ builder.Services.AddTransient<IRepoAssistantService>(services =>
 {
     var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
     var environment = services.GetRequiredService<IHostEnvironment>();
-    var promptPath = Path.GetFullPath(
-        Path.Combine(environment.ContentRootPath, "..", "..", "prompts", "repo-assistant.prompty")
-    );
+    var configuration = services.GetRequiredService<IConfiguration>();
 
+    var configuredPromptPath = configuration["RepoAssistant:PromptPath"];
+    var promptPath = Path.IsPathRooted(configuredPromptPath)
+        ? configuredPromptPath
+        : Path.GetFullPath(
+            Path.Combine(
+                environment.ContentRootPath,
+                string.IsNullOrWhiteSpace(configuredPromptPath)
+                    ? Path.Combine("prompts", "repo-assistant.prompty")
+                    : configuredPromptPath
+            )
+        );
+
+    if (!File.Exists(promptPath))
+    {
+        throw new FileNotFoundException(
+            "The repository assistant prompt file could not be found. Configure 'RepoAssistant:PromptPath' or deploy the prompt file under the application content root.",
+            promptPath
+        );
+    }
     return new RepoAssistantService(httpClientFactory.CreateClient("RepoAssistant"), promptPath);
 });
 
