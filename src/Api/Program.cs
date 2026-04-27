@@ -34,13 +34,6 @@ builder.Services.AddTransient<IRepoAssistantService>(services =>
             )
         );
 
-    if (!File.Exists(promptPath))
-    {
-        throw new FileNotFoundException(
-            "The repository assistant prompt file could not be found. Configure 'RepoAssistant:PromptPath' or deploy the prompt file under the application content root.",
-            promptPath
-        );
-    }
     return new RepoAssistantService(httpClientFactory.CreateClient("RepoAssistant"), promptPath);
 });
 
