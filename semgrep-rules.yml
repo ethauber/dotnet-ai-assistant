@@ -1,0 +1,63 @@
+rules:
+  - id: csharp-avoid-blocking-async
+    message: Avoid blocking on async with .Result or .Wait(). Prefer await.
+    severity: WARNING
+    languages:
+      - csharp
+    pattern-either:
+      - patterns:
+          - pattern: $TASK.Result
+          - metavariable-regex:
+              metavariable: $TASK
+              regex: '(?:^Task(?:\.|<)|^ValueTask(?:\.|<)|.*Async\(.*\)$|.*(?:task|Task|valueTask|ValueTask)$|.*(?:task|Task|valueTask|ValueTask)\.[A-Za-z_].*)'
+      - pattern: $X.GetAwaiter().GetResult()
+      - pattern: $X.Wait(...)
+    paths:
+      exclude:
+        - bin/
+        - obj/
+        - TestResults/
+        - .git/
+    metadata:
+      category: correctness
+      technology:
+        - dotnet
+        - csharp
+
+  - id: csharp-avoid-task-run-inside-async
+    message: Avoid Task.Run inside async flows unless there is a clear CPU-bound reason.
+    severity: INFO
+    languages:
+      - csharp
+    pattern: Task.Run(...)
+    paths:
+      exclude:
+        - bin/
+        - obj/
+        - TestResults/
+        - .git/
+    metadata:
+      category: maintainability
+      technology:
+        - dotnet
+        - csharp
+
+  - id: csharp-empty-catch
+    message: Empty catch block found. Handle, log, or justify it.
+    severity: WARNING
+    languages:
+      - csharp
+    pattern: |
+      catch ($EX) {
+      }
+    paths:
+      exclude:
+        - bin/
+        - obj/
+        - TestResults/
+        - .git/
+    metadata:
+      category: quality
+      technology:
+        - dotnet
+        - csharp

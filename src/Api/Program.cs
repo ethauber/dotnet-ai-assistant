@@ -8,12 +8,54 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddSingleton<IHealthStatusService, HealthStatusService>();
-builder.Services.AddOpenAIChatCompletion(
-    modelId: builder.Configuration["SemanticKernel:ModelId"]!,
-    apiKey: builder.Configuration["SemanticKernel:ApiKey"]!
+builder.Services.AddHttpClient(
+    "RepoAssistant",
+    client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+    }
 );
 
-builder.Services.AddScoped<IChatService, SemanticKernelChatService>();
+builder.Services.AddTransient<IRepoAssistantService>(services =>
+{
+    var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
+    var environment = services.GetRequiredService<IHostEnvironment>();
+    var configuration = services.GetRequiredService<IConfiguration>();
+
+    var configuredPromptPath = configuration["RepoAssistant:PromptPath"];
+    var promptPath = Path.IsPathRooted(configuredPromptPath)
+        ? configuredPromptPath
+        : Path.GetFullPath(
+            Path.Combine(
+                environment.ContentRootPath,
+                string.IsNullOrWhiteSpace(configuredPromptPath)
+                    ? Path.Combine("prompts", "repo-assistant.prompty")
+                    : configuredPromptPath
+            )
+        );
+
+    return new RepoAssistantService(httpClientFactory.CreateClient("RepoAssistant"), promptPath);
+});
+
+var semanticKernelModelId = builder.Configuration["SemanticKernel:ModelId"];
+var semanticKernelApiKey = builder.Configuration["SemanticKernel:ApiKey"];
+
+if (
+    !string.IsNullOrWhiteSpace(semanticKernelModelId)
+    && !string.IsNullOrWhiteSpace(semanticKernelApiKey)
+)
+{
+    builder.Services.AddOpenAIChatCompletion(
+        modelId: semanticKernelModelId,
+        apiKey: semanticKernelApiKey
+    );
+
+    builder.Services.AddScoped<IChatService, SemanticKernelChatService>();
+}
+else
+{
+    builder.Services.AddScoped<IChatService, UnconfiguredChatService>();
+}
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();

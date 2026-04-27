@@ -39,6 +39,8 @@
 
 ## 4. Development Standards
 * **Runtime:** Target **.NET 10**.
+* **Code Formatting:** Use `dotnet csharpier format .` to enforce consistent C# style before committing.
+* **Static Analysis:** Run `semgrep scan --config auto --config semgrep-rules.yml .` to detect code quality issues before committing or opening a PR. Rules are defined in `semgrep-rules.yml`; treat violations as issues to fix during local development.
 * **Testing Strategy:**
     * **Unit Tests:** Validate `Core` logic in isolation using mocked interfaces.
     * **Integration Tests:** Utilize `WebApplicationFactory` to verify the full execution pipeline.

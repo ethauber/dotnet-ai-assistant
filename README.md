@@ -1,5 +1,6 @@
 # dotnet-ai-assistant
 
+Minimal .NET 10 conversational AI playground with a health endpoint and a prompt-driven repo assistant endpoint.
 Conversational AI starter built with .NET 10 using a Clean Architecture split
 across API, Core, and Infrastructure projects.
 
@@ -8,6 +9,7 @@ across API, Core, and Infrastructure projects.
 - API project is running with controller-based endpoints.
 - Health endpoint is implemented and integration tested.
 - Semantic Kernel chat endpoint is implemented and unit tested.
+- Prompt-driven repo assistant endpoint is implemented and tested.
 - OpenAPI is enabled in development and exposed via Scalar.
 - Step-by-step implementation plan docs are now in `docs/plans/`.
 
@@ -19,6 +21,9 @@ across API, Core, and Infrastructure projects.
 - `POST /chat`
 	- Accepts `{ "message": "..." }`.
 	- Returns `{ "reply": "..." }` from Semantic Kernel chat completion.
+- `POST /repo-assistant/run`
+	- Accepts `{ "userGoal": "...", "fileContext": "...", "projectArea": "..." }`.
+	- Returns `{ "reply": "..." }` from the prompt-driven repo assistant.
 
 ## Quick Start
 
@@ -47,6 +52,12 @@ dotnet run --project src/Api/Api.csproj
 - OpenAPI: `http://localhost:5176/openapi/v1.json`
 - Scalar UI (development): available when running locally in Development
 
+5. Run static analysis before pushing:
+
+```bash
+semgrep scan --config auto --config semgrep-rules.yml .
+```
+
 ## Example Requests
 
 Health check:
@@ -63,20 +74,28 @@ curl -s -X POST http://localhost:5176/chat \
 	-d '{"message":"Say hello in one sentence"}' | jq .
 ```
 
+Repo assistant:
+
+```bash
+curl -s -X POST http://localhost:5176/repo-assistant/run \
+	-H "Content-Type: application/json" \
+	-d '{"userGoal":"Summarize the API layer","projectArea":"api"}' | jq .
+```
+
 ## Architecture
 
 The solution follows a Clean Architecture flow:
 
 - `src/Core`
 	- Domain contracts and service interfaces.
-	- Includes `IHealthStatusService` and `IChatService`.
+	- Includes `IHealthStatusService`, `IChatService`, and `IRepoAssistantService`.
 - `src/Infrastructure`
 	- Adapter implementations and external SDK integration.
-	- Includes `HealthStatusService` and `SemanticKernelChatService`.
+	- Includes `HealthStatusService`, `SemanticKernelChatService`, and `RepoAssistantService`.
 	- References AWS Bedrock runtime SDK and Microsoft Semantic Kernel.
 - `src/Api`
 	- ASP.NET controllers, DTOs, dependency injection, and OpenAPI.
-	- Includes `StatusController` and `ChatController`.
+	- Includes `StatusController`, `ChatController`, and `RepoAssistantController`.
 
 ## Configuration
 
@@ -92,6 +111,10 @@ The solution follows a Clean Architecture flow:
 Keep `SemanticKernel:ApiKey` in User Secrets for local development and out of
 source control.
 
+Prompt assets live in `prompts/`. The initial `repo-assistant.prompty` template is resolved from the repository root and used by the Infrastructure repo assistant service.
+
+See `docs/repo-assistant.md` for the repo assistant request/response contract, runtime assumptions, and current limitations.
+
 ## Testing
 
 Run all tests:
@@ -104,6 +127,17 @@ Current automated coverage includes:
 
 - Integration tests for `/status` behavior (`ok` and `degraded`).
 - Controller unit test for `/chat` response mapping via mocked `IChatService`.
+- Endpoint and service tests for `/repo-assistant/run`.
+
+## Code Quality
+
+This project uses [Semgrep](https://semgrep.dev/) for static analysis. Run a scan locally before pushing:
+
+```bash
+semgrep scan --config auto --config semgrep-rules.yml .
+```
+
+Custom rules live in `semgrep-rules.yml`. Treat these scans as a local pre-push requirement for now.
 
 ## Project Structure
 
