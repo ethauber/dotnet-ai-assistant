@@ -39,6 +39,7 @@
 
 ## 4. Development Standards
 * **Runtime:** Target **.NET 10**.
+* **User Secrets:** Always include `<UserSecretsId>` in `Api.csproj` so `dotnet user-secrets` works without `--id`. Use a stable string like `dotnet-ai-assistant-api`.
 * **Test Structure:** Use the xUnit class constructor as the `beforeEach` equivalent — initialise shared fixtures as private fields and extract repeated service-replacement logic into `private` factory helpers; each test should express only its unique intent.
 * **Code Formatting:** Use `dotnet csharpier format .` to enforce consistent C# style before committing.
 * **Static Analysis:** Run `semgrep scan --config auto --config semgrep-rules.yml .` to detect code quality issues before committing or opening a PR. Rules are defined in `semgrep-rules.yml`; treat violations as issues to fix during local development.
