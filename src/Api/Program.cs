@@ -9,7 +9,21 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog(
     (context, services, configuration) =>
-        configuration.ReadFrom.Configuration(context.Configuration).ReadFrom.Services(services)
+    {
+        var logPath = Path.Combine(
+            context.HostingEnvironment.ContentRootPath,
+            "logs",
+            "assistant-.log"
+        );
+        configuration
+            .ReadFrom.Configuration(context.Configuration)
+            .ReadFrom.Services(services)
+            .WriteTo.File(
+                logPath,
+                rollingInterval: RollingInterval.Day,
+                outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+            );
+    }
 );
 
 // Add services to the container.
