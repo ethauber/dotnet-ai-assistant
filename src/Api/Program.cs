@@ -1,9 +1,16 @@
+using Api.Middleware;
 using Core.Services;
 using Infrastructure.Services;
 using Microsoft.SemanticKernel;
 using Scalar.AspNetCore;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog(
+    (context, services, configuration) =>
+        configuration.ReadFrom.Configuration(context.Configuration).ReadFrom.Services(services)
+);
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -61,6 +68,9 @@ else
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseSerilogRequestLogging();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
