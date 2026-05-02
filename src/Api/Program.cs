@@ -1,6 +1,8 @@
 using Api.Middleware;
 using Core.Services;
+using Infrastructure.Data;
 using Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.SemanticKernel;
 using Scalar.AspNetCore;
 using Serilog;
@@ -90,10 +92,22 @@ else
     builder.Services.AddScoped<IChatService, UnconfiguredChatService>();
 }
 
+var dbPath = Path.Combine(builder.Environment.ContentRootPath, "assistant.db");
+builder.Services.AddDbContext<AssistantDbContext>(options =>
+    options.UseSqlite($"Data Source={dbPath}")
+);
+builder.Services.AddScoped<IAssistantRunRepository, AssistantRunRepository>();
+builder.Services.AddScoped<IAssistantRunService, AssistantRunService>();
+
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<AssistantDbContext>().Database.Migrate();
+}
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseSerilogRequestLogging();
