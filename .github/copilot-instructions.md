@@ -46,6 +46,7 @@
 * **Code Formatting:** Use `dotnet csharpier format .` to enforce consistent C# style before committing.
 * **Static Analysis:** Run `semgrep scan --config auto --config semgrep-rules.yml .` to detect code quality issues before committing or opening a PR. Rules are defined in `semgrep-rules.yml`; treat violations as issues to fix during local development.
 * **Testing Strategy:**
-    * **Unit Tests:** Validate `Core` logic in isolation using mocked interfaces.
+    * **Unit Tests:** Validate `Core` logic in isolation using mocked interfaces. Keep tests minimal and focused — one behaviour per test, no redundant assertions, no setup that isn't exercised by the test.
     * **Integration Tests:** Utilize `WebApplicationFactory` to verify the full execution pipeline.
     * **Mocking Scope:** Target mocks specifically at external I/O boundaries (e.g., AWS Bedrock client), allowing the Controller -> Service -> Adapter flow to execute as real implementations.
+    * **Refactoring:** After refactoring existing tests or production code, include a numbered functional verification checklist (e.g., `dotnet test`, `dotnet run` + curl/Scalar steps) so another developer can confirm nothing regressed.
