@@ -20,12 +20,13 @@ namespace Infrastructure.Data.Migrations
                     Action = table.Column<string>(type: "TEXT", nullable: false),
                     ActorType = table.Column<string>(type: "TEXT", nullable: false),
                     Detail = table.Column<string>(type: "TEXT", nullable: true),
-                    OccurredUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)
+                    OccurredUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AssistantRunEvents", x => x.Id);
-                });
+                }
+            );
 
             migrationBuilder.CreateTable(
                 name: "AssistantRuns",
@@ -39,22 +40,21 @@ namespace Infrastructure.Data.Migrations
                     FinalOutput = table.Column<string>(type: "TEXT", nullable: true),
                     Status = table.Column<string>(type: "TEXT", nullable: false),
                     CreatedUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    UpdatedUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)
+                    UpdatedUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AssistantRuns", x => x.Id);
-                });
+                }
+            );
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "AssistantRunEvents");
+            migrationBuilder.DropTable(name: "AssistantRunEvents");
 
-            migrationBuilder.DropTable(
-                name: "AssistantRuns");
+            migrationBuilder.DropTable(name: "AssistantRuns");
         }
     }
 }
