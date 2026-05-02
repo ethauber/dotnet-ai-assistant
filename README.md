@@ -157,21 +157,6 @@ semgrep scan --config auto --config semgrep-rules.yml .
 
 Custom rules live in `semgrep-rules.yml`. Treat these scans as a local pre-push requirement for now.
 
-## Project Structure
-
-```text
-dotnet-ai-assistant/
-├── src/
-│   ├── Api/
-│   ├── Core/
-│   └── Infrastructure/
-├── tests/
-│   └── Tests/
-├── docs/
-│   └── plans/
-└── dotnet-ai-assistant.sln
-```
-
 ## Plans And Iteration
 
 - Active implementation plan:
