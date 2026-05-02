@@ -25,11 +25,12 @@ public class AssistantRunRepository(AssistantDbContext db) : IAssistantRunReposi
     public async Task<IReadOnlyList<AssistantRun>> ListRecentAsync(
         int count = 20,
         CancellationToken cancellationToken = default
-    ) =>
-        await db
-            .AssistantRuns.OrderByDescending(r => r.CreatedUtc)
-            .Take(count)
-            .ToListAsync(cancellationToken);
+    )
+    {
+        // SQLite does not support DateTimeOffset in ORDER BY; sort on the client after fetching.
+        var all = await db.AssistantRuns.ToListAsync(cancellationToken);
+        return all.OrderByDescending(r => r.CreatedUtc).Take(count).ToList();
+    }
 
     public async Task UpdateAsync(AssistantRun run, CancellationToken cancellationToken = default)
     {

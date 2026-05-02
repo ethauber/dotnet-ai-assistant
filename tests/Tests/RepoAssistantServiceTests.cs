@@ -5,6 +5,7 @@ using System.Text.Json;
 using Core.Exceptions;
 using FluentAssertions;
 using Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -29,7 +30,7 @@ public sealed class RepoAssistantServiceTests
                 };
             }
         );
-        var service = new RepoAssistantService(new HttpClient(handler), promptPath);
+        var service = CreateService(handler, promptPath);
 
         var result = await service.RunAsync(
             "Summarize the repo",
@@ -53,12 +54,8 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Prompt_File_Is_Missing()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))
-                )
-            ),
+        var service = CreateService(
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)),
             "missing.prompty"
         );
 
@@ -70,12 +67,8 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Returns_NonSuccess_Status()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway))
-                )
-            ),
+        var service = CreateService(
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)),
             GetPromptPath()
         );
 
@@ -88,22 +81,14 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Returns_Invalid_Json()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
-                        Task.FromResult(
-                            new HttpResponseMessage(HttpStatusCode.OK)
-                            {
-                                Content = new StringContent(
-                                    "not json",
-                                    Encoding.UTF8,
-                                    "application/json"
-                                ),
-                            }
-                        )
-                )
-            ),
+        var service = CreateService(
+            (_, _) =>
+                Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("not json", Encoding.UTF8, "application/json"),
+                    }
+                ),
             GetPromptPath()
         );
 
@@ -117,22 +102,18 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Returns_No_Assistant_Content()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
-                        Task.FromResult(
-                            new HttpResponseMessage(HttpStatusCode.OK)
-                            {
-                                Content = new StringContent(
-                                    "{\"choices\":[]}",
-                                    Encoding.UTF8,
-                                    "application/json"
-                                ),
-                            }
-                        )
-                )
-            ),
+        var service = CreateService(
+            (_, _) =>
+                Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(
+                            "{\"choices\":[]}",
+                            Encoding.UTF8,
+                            "application/json"
+                        ),
+                    }
+                ),
             GetPromptPath()
         );
 
@@ -147,36 +128,29 @@ public sealed class RepoAssistantServiceTests
     public async Task RunAsync_Should_Retry_When_Upstream_Is_Throttled()
     {
         var attemptCount = 0;
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
+        var service = CreateService(
+            (_, _) =>
+            {
+                attemptCount++;
+                if (attemptCount < 3)
+                {
+                    var throttledResponse = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                    throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(
+                        TimeSpan.Zero
+                    );
+                    return Task.FromResult(throttledResponse);
+                }
+                return Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
                     {
-                        attemptCount++;
-                        if (attemptCount < 3)
-                        {
-                            var throttledResponse = new HttpResponseMessage(
-                                HttpStatusCode.TooManyRequests
-                            );
-                            throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(
-                                TimeSpan.Zero
-                            );
-                            return Task.FromResult(throttledResponse);
-                        }
-
-                        return Task.FromResult(
-                            new HttpResponseMessage(HttpStatusCode.OK)
-                            {
-                                Content = new StringContent(
-                                    "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
-                                    Encoding.UTF8,
-                                    "application/json"
-                                ),
-                            }
-                        );
+                        Content = new StringContent(
+                            "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
+                            Encoding.UTF8,
+                            "application/json"
+                        ),
                     }
-                )
-            ),
+                );
+            },
             GetPromptPath()
         );
 
@@ -189,21 +163,13 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Remains_Throttled()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
-                    {
-                        var throttledResponse = new HttpResponseMessage(
-                            HttpStatusCode.TooManyRequests
-                        );
-                        throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(
-                            TimeSpan.Zero
-                        );
-                        return Task.FromResult(throttledResponse);
-                    }
-                )
-            ),
+        var service = CreateService(
+            (_, _) =>
+            {
+                var throttledResponse = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.Zero);
+                return Task.FromResult(throttledResponse);
+            },
             GetPromptPath()
         );
 
@@ -216,22 +182,18 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Returns_Whitespace_Content()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
-                        Task.FromResult(
-                            new HttpResponseMessage(HttpStatusCode.OK)
-                            {
-                                Content = new StringContent(
-                                    "{\"choices\":[{\"message\":{\"content\":\"   \"}}]}",
-                                    Encoding.UTF8,
-                                    "application/json"
-                                ),
-                            }
-                        )
-                )
-            ),
+        var service = CreateService(
+            (_, _) =>
+                Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(
+                            "{\"choices\":[{\"message\":{\"content\":\"   \"}}]}",
+                            Encoding.UTF8,
+                            "application/json"
+                        ),
+                    }
+                ),
             GetPromptPath()
         );
 
@@ -241,6 +203,16 @@ public sealed class RepoAssistantServiceTests
             .ThrowAsync<UpstreamServiceException>()
             .WithMessage("*no assistant content*");
     }
+
+    private static RepoAssistantService CreateService(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder,
+        string promptPath
+    ) => CreateService(new StubHttpMessageHandler(responder), promptPath);
+
+    private static RepoAssistantService CreateService(
+        StubHttpMessageHandler handler,
+        string promptPath
+    ) => new(new HttpClient(handler), promptPath, NullLogger<RepoAssistantService>.Instance);
 
     private static string GetPromptPath()
     {

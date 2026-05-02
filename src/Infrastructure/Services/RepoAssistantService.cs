@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Core.Exceptions;
 using Core.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services;
 
@@ -18,11 +19,17 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
     private readonly HttpClient _httpClient;
     private readonly string _promptyPath;
+    private readonly ILogger<RepoAssistantService> _logger;
 
-    public RepoAssistantService(HttpClient httpClient, string promptyPath)
+    public RepoAssistantService(
+        HttpClient httpClient,
+        string promptyPath,
+        ILogger<RepoAssistantService> logger
+    )
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _promptyPath = promptyPath ?? throw new ArgumentNullException(nameof(promptyPath));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<string> RunAsync(
@@ -62,8 +69,18 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
                     if (!response.IsSuccessStatusCode)
                     {
+                        var errorBody = response.Content is not null
+                            ? await response.Content.ReadAsStringAsync(cancellationToken)
+                            : string.Empty;
+                        _logger.LogWarning(
+                            "Upstream model endpoint returned {StatusCode}. Model={Model} Endpoint={Endpoint} Body={ResponseBody}",
+                            (int)response.StatusCode,
+                            prompt.Model,
+                            prompt.Endpoint,
+                            errorBody
+                        );
                         throw new UpstreamServiceException(
-                            "The configured model endpoint returned a non-success response.",
+                            $"The configured model endpoint returned {(int)response.StatusCode}. Response: {errorBody}",
                             (int)response.StatusCode
                         );
                     }
@@ -193,6 +210,15 @@ public sealed class RepoAssistantService : IRepoAssistantService
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
         };
+
+        _logger.LogDebug(
+            "Sending request to {Endpoint} — model={Model} temperature={Temperature} max_tokens={MaxTokens} body={Body}",
+            prompt.Endpoint,
+            prompt.Model,
+            prompt.Temperature,
+            prompt.MaxTokens,
+            body
+        );
 
         if (!string.IsNullOrWhiteSpace(prompt.ApiKey))
         {
@@ -333,7 +359,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
         {
             var match = Regex.Match(
                 yaml,
-                $"^\\s*{Regex.Escape(key)}:\\s*(.+)$",
+                $"^\\s*{Regex.Escape(key)}:[ \\t]*(.+)$",
                 RegexOptions.Multiline
             );
             return match.Success ? match.Groups[1].Value.Trim().Trim('"') : string.Empty;

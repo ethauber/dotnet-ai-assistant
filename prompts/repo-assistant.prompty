@@ -23,7 +23,7 @@ model:
     type: openai
     base_url: http://localhost:11434/v1
     api_key: ollama
-    model: llama3.1:latest
+    model: gemma3:4b
   parameters:
     temperature: 0.2
     max_tokens: 800

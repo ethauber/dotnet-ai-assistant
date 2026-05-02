@@ -1,51 +1,31 @@
 # System Directives: .NET Conversational AI Architecture
 
-## 1. Architectural Integrity & Data Flow
-**Objective:** Maintain strict unidirectionality and separation of concerns via Clean Architecture principles.
+## 1. Architectural Integrity & Boundaries
+* **Core (Domain):** Pure business logic, entities, service interfaces, and custom exceptions. **Constraint:** Zero framework or SDK dependencies; restrict strictly to standard language libraries.
+* **Infrastructure (Adapter):** Implements Core interfaces. **Constraint:** Owns external SDK integrations (e.g., `AWSSDK.BedrockRuntime`, `Amazon.*`).
+* **API (Entry Point):** ASP.NET MVC Controllers. Translates HTTP -> Domain -> HTTP. **Constraint:** Owns `Microsoft.AspNetCore`. Enforce DTOs (Request/Response) at the Controller boundary to isolate API contracts. Map domain results directly to HTTP Status Codes.
 
-### Core (The Domain)
-* **Content:** Encapsulate pure business logic, Domain Entities, Service Interfaces, and Custom Exceptions.
-* **Dependency Scope:** Restrict dependencies to standard language libraries and internal domain objects.
-* **Package Placement:** Locate infrastructure-specific packages (e.g., `Microsoft.AspNetCore`, `Amazon.*`) exclusively outside this layer.
+## 2. Operations & Observability
+* **Exceptions:** Emit RFC 7807 `ProblemDetails`. Map Domain Exceptions to specific 4xx codes. Unhandled exceptions are 500s; strictly mask stack traces and raw upstream errors (e.g., AWS details) from clients.
+* **Logging:** Use structured logging (`ILogger`) tagged with `CorrelationId`. Record the intent (entry point) and outcome (exit point/duration).
+* **Upstream HTTP:** Log outbound calls at `Debug` with full request body (endpoint, model, parameters, payload) *before* execution. Log `Warning` with status code, model, endpoint, and response body on non-2xx results.
 
-### Infrastructure (The Adapter)
-* **Role:** Implement interfaces defined within the `Core` layer.
-* **Dependency Rule:** Import `Core` and necessary external SDKs (e.g., `AWSSDK.BedrockRuntime`) to fulfill interface contracts.
+## 3. AI & Bedrock Specifics
+* **Statelessness:** Maintain a completely stateless Bedrock adapter. Isolate all conversation history management inside a dedicated Core service.
+* **Resiliency:** Actively recover from `ThrottlingException` (HTTP 429) with exponential backoff or propagate "Service Busy". Validate prompt sizes against target model token limits.
+* **Local LLMs:** Set `client.Timeout = TimeSpan.FromSeconds(120)` to override the default 30s `HttpClient` limit for local CPU-bound models.
+* **Prompty Parsing:** Use `[ \t]*` (instead of `\s*`) after the colon in regexes to prevent matching across line boundaries in multiline YAML blocks.
 
-### API (The Entry Point)
-* **Role:** Orchestrate requests and translate protocols (HTTP -> Domain -> HTTP).
-* **Pattern:** Implement **ASP.NET MVC Controllers**.
-* **Delegation:** Delegate all business logic execution to Services or Mediators.
-* **Response Mapping:** Map domain results directly to appropriate HTTP Status Codes.
-* **Contract Isolation:** Enforce the use of DTOs (Request/Response models) at the Controller boundary to separate API contracts from internal Domain entities.
+## 4. Testing Strategy (xUnit)
+* **Setup:** Use the class constructor for `beforeEach` shared setup. Express exactly one unique behavior per test.
+* **Factories:** Extract private `CreateService(...)` helpers to supply default dependencies (e.g., `NullLogger<T>.Instance`), keeping test bodies focused on their unique intent.
+* **Isolation:** Mock *only* external I/O boundaries. Allow Controller -> Service -> Adapter flows to execute using real implementations. Use `WebApplicationFactory` for integration tests.
+* **State Machines:** Use `[Theory, InlineData]` to cover every invalid status transition in a single test method (one `InlineData` per disallowed status).
+* **Verification:** After refactoring, write a numbered functional checklist (`dotnet test`, `dotnet run` + `curl`/`Scalar` steps) so developers can confirm zero regressions.
 
-## 2. Operational Semantics
-### Exception Handling
-* **Standard:** Format all non-2xx responses using RFC 7807 **ProblemDetails**.
-* **Mapping Strategy:** Capture known Domain Exceptions (e.g., `ModelNotFoundException`) and assign specific 4xx status codes. Treat unhandled exceptions as 500 Internal Server Errors.
-* **Security:** Sanitize client-facing error messages. Mask stack traces and raw upstream errors (e.g., AWS SDK details) to prevent information leakage.
-
-### Observability
-* **Logging Standard:** Utilize Structured Logging (e.g., `ILogger`).
-* **Content Strategy:** Record the **intent** (entry point) and **outcome** (exit point/duration) of operations.
-* **Traceability:** Tag all log entries with a `CorrelationId` to ensure request continuity.
-
-## 3. Domain Specifics: AI & AWS Bedrock
-* **Domain Context:** Optimize for **Conversational AI** workflows.
-* **Resiliency:**
-    * **Throttling:** Implement active recovery for `ThrottlingException` (HTTP 429). Utilize exponential backoff strategies or propagate specific "Service Busy" signals.
-    * **Token Management:** Validate prompt construction against the specific token limits of the target Bedrock model.
-* **State Management:** Maintain a stateless architecture within the Bedrock adapter. Isolate conversation history management within a dedicated `Core` service.
-
-## 4. Development Standards
-* **Runtime:** Target **.NET 10**.
-* **User Secrets:** Always include `<UserSecretsId>` in `Api.csproj` so `dotnet user-secrets` works without `--id`. Use a stable string like `dotnet-ai-assistant-api`.
-* **Test Structure:** Use the xUnit class constructor as the `beforeEach` equivalent — initialise shared fixtures as private fields and extract repeated service-replacement logic into `private` factory helpers; each test should express only its unique intent.
-* **Plan Tracking:** When creating a phased plan at `docs/plans/PLAN-NNN-*.md`, immediately create a companion `PLAN-NNN-progress.md` with the full task list in a pending state. Keep the progress doc current: mark items complete as they land, add any out-of-plan fixes in a separate table, and update it before ending a working session.
-* **Instruction Updates:** When a session surfaces a new convention, constraint, or hard-won fix that would save future effort, add the minimal salient rule to this file before the session ends.
-* **Code Formatting:** Use `dotnet csharpier format .` to enforce consistent C# style before committing.
-* **Static Analysis:** Run `semgrep scan --config auto --config semgrep-rules.yml .` to detect code quality issues before committing or opening a PR. Rules are defined in `semgrep-rules.yml`; treat violations as issues to fix during local development.
-* **Testing Strategy:**
-    * **Unit Tests:** Validate `Core` logic in isolation using mocked interfaces. Keep tests minimal and focused — one behaviour per test, no redundant assertions, no setup that isn't exercised by the test.
-    * **Integration Tests:** Utilize `WebApplicationFactory` to verify the full execution pipeline.
-    * **Mocking Scope:** Target mocks specifically at external I/O boundaries (e.g., AWS Bedrock client), allowing the Controller -> Service -> Adapter flow to execute as real implementations.    * **State machine guards:** Use `[Theory, InlineData]` to cover every invalid status for each transition in a single test method — one Theory per operation, one `InlineData` per disallowed status.    * **Refactoring:** After refactoring existing tests or production code, include a numbered functional verification checklist (e.g., `dotnet test`, `dotnet run` + curl/Scalar steps) so another developer can confirm nothing regressed.
+## 5. Development Standards
+* **Tooling:** Target **.NET 10**. Add `<UserSecretsId>dotnet-ai-assistant-api</UserSecretsId>` in `Api.csproj` for `--id`-less usage.
+* **Quality Gates:** Run `dotnet csharpier format .` and `semgrep scan --config auto --config semgrep-rules.yml .` before commits. Treat Semgrep rules as mandatory local fixes.
+* **Plan Tracking:** Pair every `docs/plans/PLAN-NNN-*.md` with a live `PLAN-NNN-progress.md`. Mark items complete as they land, track out-of-plan fixes in a separate table, and update before ending the session.
+* **Instruction Updates:** Append new conventions, constraints, or hard-won fixes to this file when it will provide the highest signal and clarity to future developers.
+* **Razor Pages:** On forms calling slow upstreams, disable the submit button and show a CSS spinner via `addEventListener('submit', ...)`. Escape Razor syntax using `@@keyframes`.

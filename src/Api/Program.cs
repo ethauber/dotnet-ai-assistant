@@ -35,7 +35,7 @@ builder.Services.AddHttpClient(
     "RepoAssistant",
     client =>
     {
-        client.Timeout = TimeSpan.FromSeconds(30);
+        client.Timeout = TimeSpan.FromSeconds(120);
     }
 );
 
@@ -57,7 +57,11 @@ builder.Services.AddTransient<IRepoAssistantService>(services =>
             )
         );
 
-    return new RepoAssistantService(httpClientFactory.CreateClient("RepoAssistant"), promptPath);
+    return new RepoAssistantService(
+        httpClientFactory.CreateClient("RepoAssistant"),
+        promptPath,
+        services.GetRequiredService<ILogger<RepoAssistantService>>()
+    );
 });
 
 var semanticKernelModelId = builder.Configuration["SemanticKernel:ModelId"];
@@ -99,6 +103,8 @@ builder.Services.AddDbContext<AssistantDbContext>(options =>
 builder.Services.AddScoped<IAssistantRunRepository, AssistantRunRepository>();
 builder.Services.AddScoped<IAssistantRunService, AssistantRunService>();
 
+builder.Services.AddRazorPages();
+
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
@@ -120,6 +126,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
+app.MapRazorPages();
 
 app.Run();
 

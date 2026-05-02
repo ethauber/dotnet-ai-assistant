@@ -1,0 +1,73 @@
+@page "{id:guid}"
+@model ReviewModel
+@{
+    ViewData["Title"] = "Review Draft";
+    var run = Model.Run!;
+    var canAct = run.Status == "NeedsHumanReview";
+}
+
+<h1>Review Draft</h1>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-error">@Model.ErrorMessage</div>
+}
+
+<div class="card">
+    <p class="meta">Run ID: <code>@run.Id</code> &nbsp;|&nbsp; Created: @run.CreatedUtc.ToLocalTime().ToString("g")</p>
+    <p><strong>Goal:</strong> @run.UserGoal</p>
+    @if (run.ProjectArea is not null)
+    {
+        <p><strong>Area:</strong> @run.ProjectArea</p>
+    }
+    <p>Status: <span class="status-badge status-@run.Status">@run.Status</span></p>
+</div>
+
+@if (run.GeneratedDraft is not null)
+{
+    <div class="card">
+        <h2>Generated Draft</h2>
+        <div class="draft-box">@run.GeneratedDraft</div>
+    </div>
+}
+
+@if (run.FinalOutput is not null)
+{
+    <div class="card">
+        <h2>Final Output</h2>
+        <div class="draft-box">@run.FinalOutput</div>
+    </div>
+}
+
+@if (canAct)
+{
+    <div class="card">
+        <h2>Your Decision</h2>
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+            <form method="post" asp-page-handler="Approve">
+                <input type="hidden" name="id" value="@run.Id" />
+                <button class="btn btn-success">✓ Approve</button>
+            </form>
+            <form method="post" asp-page-handler="Reject">
+                <input type="hidden" name="id" value="@run.Id" />
+                <button class="btn btn-danger">✗ Reject</button>
+            </form>
+            <form method="post" asp-page-handler="Regenerate">
+                <input type="hidden" name="id" value="@run.Id" />
+                <button class="btn btn-warning">↻ Regenerate</button>
+            </form>
+        </div>
+
+        <h2>Edit &amp; Approve</h2>
+        <form method="post" asp-page-handler="EditAndApprove">
+            <input type="hidden" name="id" value="@run.Id" />
+            <div class="field-group">
+                <label for="editedOutput">Edit the draft, then approve your version:</label>
+                <textarea id="editedOutput" name="editedOutput" rows="12">@run.GeneratedDraft</textarea>
+            </div>
+            <button class="btn btn-primary">✎ Edit &amp; Approve</button>
+        </form>
+    </div>
+}
+
+<p style="margin-top:1rem;"><a asp-page="/Runs">← Back to Recent Runs</a></p>

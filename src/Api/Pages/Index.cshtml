@@ -1,0 +1,24 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home";
+}
+
+<h1>AI Assistant — Human-in-the-Loop</h1>
+
+<div class="card">
+    <h2>How it works</h2>
+    <ol>
+        <li>Submit a goal and optional context.</li>
+        <li>The assistant generates a draft.</li>
+        <li>You review the draft and choose to <strong>approve</strong>, <strong>edit and approve</strong>,
+            <strong>reject</strong>, or <strong>regenerate</strong>.</li>
+            <li>Only approved output becomes the final result — the AI proposes, you decide.</li>
+        </ol>
+        <p>Every action is logged with a correlation ID so the full trail is observable.</p>
+    </div>
+
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+        <a asp-page="/Submit" class="btn btn-primary">Start a New Run</a>
+        <a asp-page="/Runs" class="btn btn-secondary">View Recent Runs</a>
+    </div>
