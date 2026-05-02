@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InternalsVisibleTo>Tests</InternalsVisibleTo>
+    <UserSecretsId>dotnet-ai-assistant-api</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

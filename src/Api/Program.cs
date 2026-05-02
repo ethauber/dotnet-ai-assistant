@@ -50,7 +50,7 @@ builder.Services.AddTransient<IRepoAssistantService>(services =>
             Path.Combine(
                 environment.ContentRootPath,
                 string.IsNullOrWhiteSpace(configuredPromptPath)
-                    ? Path.Combine("prompts", "repo-assistant.prompty")
+                    ? Path.Combine("..", "..", "prompts", "repo-assistant.prompty")
                     : configuredPromptPath
             )
         );
@@ -60,16 +60,28 @@ builder.Services.AddTransient<IRepoAssistantService>(services =>
 
 var semanticKernelModelId = builder.Configuration["SemanticKernel:ModelId"];
 var semanticKernelApiKey = builder.Configuration["SemanticKernel:ApiKey"];
+var semanticKernelEndpoint = builder.Configuration["SemanticKernel:Endpoint"];
 
 if (
     !string.IsNullOrWhiteSpace(semanticKernelModelId)
     && !string.IsNullOrWhiteSpace(semanticKernelApiKey)
 )
 {
-    builder.Services.AddOpenAIChatCompletion(
-        modelId: semanticKernelModelId,
-        apiKey: semanticKernelApiKey
-    );
+    if (!string.IsNullOrWhiteSpace(semanticKernelEndpoint))
+    {
+        builder.Services.AddOpenAIChatCompletion(
+            modelId: semanticKernelModelId,
+            apiKey: semanticKernelApiKey,
+            endpoint: new Uri(semanticKernelEndpoint)
+        );
+    }
+    else
+    {
+        builder.Services.AddOpenAIChatCompletion(
+            modelId: semanticKernelModelId,
+            apiKey: semanticKernelApiKey
+        );
+    }
 
     builder.Services.AddScoped<IChatService, SemanticKernelChatService>();
 }
