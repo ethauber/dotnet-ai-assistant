@@ -7,9 +7,9 @@
 
 ## 2. Operations & Observability
 * **Exceptions:** Emit RFC 7807 `ProblemDetails`. Map Domain Exceptions to specific 4xx codes. Unhandled exceptions are 500s; strictly mask stack traces and raw upstream errors (e.g., AWS details) from clients.
-* **Logging:** Use structured logging (`ILogger`) tagged with `CorrelationId`. Record the intent (entry point) and outcome (exit point/duration).
+* **Logging:** Use structured logging (`ILogger`) tagged with `CorrelationId` and `RunId`. Record the intent (entry point) and outcome (exit point/duration). For frequently called log sites use `LoggerMessage.Define<T>(...)` static delegates to eliminate per-call boxing and string allocation.
 * **Upstream HTTP:** Log outbound calls at `Debug` with full request body (endpoint, model, parameters, payload) *before* execution. Log `Warning` with status code, model, endpoint, and response body on non-2xx results.
-* **DB Log Sink:** Register `RunLogSink` as a singleton `ILogEventSink` using `IServiceScopeFactory`. Filter `Information`+ logs from API/Infra/Core by `{RunId}`, ensuring all exceptions are swallowed.
+* **DB Log Sink (`SQLiteLogSink`):** Implements `IBatchedLogEventSink` (`Serilog.Sinks.PeriodicBatching`). Writes `Information`+ events from `Api.*`/`Infrastructure.*`/`Core.*` to a `Logs` table in `assistant.db` via `Microsoft.Data.Sqlite` directly — no EF overhead. Configured as a sub-logger in `Program.cs` (`WriteTo.Logger(sub => sub.Filter....WriteTo.Sink(batchingSink))`); **not** registered in DI. Bulk-INSERTs per batch in a single transaction; `Properties` stored as JSON for `json_extract` queries. `GetLogsForRunAsync` queries with `json_extract(Properties, '$.RunId')` via raw ADO.NET; returns `[]` on `SqliteException` (table absent on first run/tests). `SelfLog.Enable(...)` in `Program.cs` surfaces sink failures to stderr without recursing into the pipeline. Do **not** use `Serilog.Sinks.SQLite` NuGet — it pulls `System.Data.SQLite.Core` (native binaries) which conflicts with `Microsoft.Data.Sqlite`.
 
 ## 3. AI & Bedrock Specifics
 * **Statelessness:** Maintain a completely stateless Bedrock adapter. Isolate all conversation history management inside a dedicated Core service.
