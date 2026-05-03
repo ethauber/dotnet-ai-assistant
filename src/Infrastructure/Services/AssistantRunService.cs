@@ -36,6 +36,7 @@ public class AssistantRunService(
                 RunId = run.Id,
                 Action = "Created",
                 ActorType = ActorType.Human,
+                Detail = run.PromptTemplateName,
             },
             cancellationToken
         );
@@ -66,6 +67,7 @@ public class AssistantRunService(
             run,
             "DraftGenerated",
             ActorType.System,
+            detail: $"template:{run.PromptTemplateName} v{run.PromptTemplateVersion}\n\n{run.GeneratedDraft}",
             cancellationToken: cancellationToken
         );
         return run;
@@ -82,7 +84,13 @@ public class AssistantRunService(
         run.FinalOutput = run.GeneratedDraft;
         run.Status = AssistantRunStatus.Approved;
 
-        await CommitAsync(run, "Approved", ActorType.Human, cancellationToken: cancellationToken);
+        await CommitAsync(
+            run,
+            "Approved",
+            ActorType.Human,
+            detail: run.FinalOutput,
+            cancellationToken: cancellationToken
+        );
         return run;
     }
 
@@ -117,6 +125,7 @@ public class AssistantRunService(
             run,
             "EditedAndApproved",
             ActorType.Human,
+            detail: $"original:\n{run.GeneratedDraft}\n\n---edited & approved:\n{editedOutput}",
             cancellationToken: cancellationToken
         );
         return run;
@@ -137,6 +146,7 @@ public class AssistantRunService(
             run,
             "RegenerateRequested",
             ActorType.Human,
+            detail: run.PromptTemplateName,
             cancellationToken: cancellationToken
         );
         return await GenerateDraftAsync(run.Id, cancellationToken);

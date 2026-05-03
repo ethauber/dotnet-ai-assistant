@@ -31,9 +31,13 @@ public class ReviewModel(IAssistantRunService service, IAssistantRunRepository r
         return RedirectToPage(new { id });
     }
 
-    public async Task<IActionResult> OnPostRejectAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostRejectAsync(
+        Guid id,
+        string? reason,
+        CancellationToken cancellationToken
+    )
     {
-        await ExecuteAsync(id, r => service.RejectAsync(r, cancellationToken: cancellationToken));
+        await ExecuteAsync(id, r => service.RejectAsync(r, reason, cancellationToken));
         return RedirectToPage(new { id });
     }
 

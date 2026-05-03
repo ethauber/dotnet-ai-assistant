@@ -58,10 +58,6 @@
                 <input type="hidden" name="id" value="@run.Id" />
                 <button class="btn btn-success action-btn">✓ Approve</button>
             </form>
-            <form method="post" asp-page-handler="Reject" class="action-form">
-                <input type="hidden" name="id" value="@run.Id" />
-                <button class="btn btn-danger action-btn">✗ Reject</button>
-            </form>
             <form method="post" asp-page-handler="Regenerate" class="action-form">
                 <input type="hidden" name="id" value="@run.Id" />
                 <button class="btn btn-warning action-btn">↻ Regenerate</button>
@@ -70,6 +66,17 @@
                 </span>
             </form>
         </div>
+
+        <form method="post" asp-page-handler="Reject" class="action-form" style="margin-bottom:1.5rem;">
+            <input type="hidden" name="id" value="@run.Id" />
+            <div class="field-group" style="margin-bottom:0.5rem;">
+                <label for="reject-reason" style="font-size:0.875rem;font-weight:600;">Reject reason <span class="meta">(optional)</span></label>
+                <input id="reject-reason" name="reason" type="text"
+                       placeholder="e.g. Off-topic, too verbose, incorrect…"
+                       style="display:block;width:100%;max-width:480px;margin-top:0.3rem;" />
+            </div>
+            <button class="btn btn-danger action-btn">✗ Reject</button>
+        </form>
 
         <h2>Edit &amp; Approve</h2>
         <form method="post" asp-page-handler="EditAndApprove" class="action-form">
@@ -101,6 +108,19 @@
 @@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 
+<p style="margin-top:1rem;"><a asp-page="/Runs">← Back to Recent Runs</a></p>
+
+<!-- Detail expand modal (must be in DOM before the script block below) -->
+<div id="detail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:8px;max-width:680px;width:90%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.22);">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid #eee;">
+            <strong id="detail-modal-title" style="font-size:1rem;"></strong>
+            <button onclick="closeDetailModal()" style="background:none;border:none;font-size:1.25rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <pre id="detail-modal-body" style="margin:0;padding:1.25rem;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:0.875rem;flex:1;"></pre>
+    </div>
+</div>
+
 <script>
 document.querySelectorAll('.action-form').forEach(function (form) {
     form.addEventListener('submit', function () {
@@ -109,9 +129,32 @@ document.querySelectorAll('.action-form').forEach(function (form) {
         if (spinner) spinner.style.display = 'inline';
     });
 });
-</script>
 
-<p style="margin-top:1rem;"><a asp-page="/Runs">← Back to Recent Runs</a></p>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.detail-preview').forEach(function (el) {
+        el.addEventListener('click', function () {
+            var raw = el.getAttribute('data-detail');
+            var action = el.closest('tr').querySelector('td:nth-child(2)').textContent.trim();
+            openDetailModal(action, raw);
+        });
+    });
+});
+
+function openDetailModal(title, text) {
+    document.getElementById('detail-modal-title').textContent = title;
+    document.getElementById('detail-modal-body').textContent = text;
+    var modal = document.getElementById('detail-modal');
+    modal.style.display = 'flex';
+}
+
+function closeDetailModal() {
+    document.getElementById('detail-modal').style.display = 'none';
+}
+
+document.getElementById('detail-modal').addEventListener('click', function (e) {
+    if (e.target === this) closeDetailModal();
+});
+</script>
 
 @if (Model.Events.Count > 0)
 {
@@ -134,7 +177,20 @@ document.querySelectorAll('.action-form').forEach(function (form) {
                             @ev.OccurredUtc.ToLocalTime().ToString("HH:mm:ss")</td>
                             <td style="padding:0.4rem 0.75rem;">@ev.Action</td>
                             <td style="padding:0.4rem 0.75rem;">@ev.ActorType</td>
-                            <td style="padding:0.4rem 0.75rem;color:#666;">@ev.Detail</td>
+                            <td style="padding:0.4rem 0.75rem;color:#666;">
+                                @if (ev.Detail is not null)
+                                {
+                                    var preview = ev.Detail.Length > 80 ? ev.Detail[..80].Replace("\n", " ") + "…" : ev.Detail.Replace("\n", " ");
+                                    if (ev.Detail.Length > 80)
+                                    {
+                                        <span class="detail-preview" style="cursor:pointer;text-decoration:underline dotted;" data-detail="@ev.Detail" title="Click to expand">@preview</span>
+                                    }
+                                    else
+                                    {
+                                        @preview
+                                    }
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>
