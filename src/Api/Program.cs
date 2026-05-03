@@ -117,6 +117,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseSerilogRequestLogging();
+app.UseStatusCodePagesWithReExecute("/error/{0}");
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
