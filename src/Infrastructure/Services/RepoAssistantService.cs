@@ -340,8 +340,12 @@ public sealed class RepoAssistantService : IRepoAssistantService
                 .ToList()
             : [];
 
+        // Architecture doc drives the manifest — cache invalidates when the doc changes.
+        var archDocPath = Path.Combine(repoRoot, "docs", "repo-assistant.md");
+        var archDocFiles = File.Exists(archDocPath) ? [archDocPath] : Array.Empty<string>();
+
         // Cache invalidation: max LastWriteTimeUtc across all watched files.
-        var allWatched = contentFiles.Concat(testFiles).ToList();
+        var allWatched = contentFiles.Concat(testFiles).Concat(archDocFiles).ToList();
         var stamp =
             allWatched.Count > 0
                 ? allWatched.Max(f => File.GetLastWriteTimeUtc(f))
@@ -354,24 +358,34 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
         var sb = new StringBuilder();
 
-        // File tree.
+        // ── MANIFEST (always first — survives context-window truncation) ──────────
+        // Sourced from docs/repo-assistant.md so the model always sees an accurate,
+        // human-maintained description of what is already implemented.
+        if (archDocFiles.Length > 0)
+        {
+            var archDoc = await File.ReadAllTextAsync(archDocPath, cancellationToken);
+            sb.AppendLine("## IMPORTANT: What is already implemented (from docs/repo-assistant.md)");
+            sb.AppendLine();
+            sb.AppendLine(archDoc.TrimEnd());
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"### Tests ({testFiles.Count} test files)");
+        foreach (var f in testFiles)
+            sb.AppendLine($"- {Path.GetRelativePath(repoRoot, f)}");
+        sb.AppendLine();
+        sb.AppendLine("---");
+        sb.AppendLine();
+
+        // ── FILE TREE ─────────────────────────────────────────────────────────────
         sb.AppendLine("## Source file tree");
         sb.AppendLine("```");
         if (Directory.Exists(srcDir))
             AppendTree(sb, srcDir, repoRoot, 0);
         sb.AppendLine("```");
 
-        // Test coverage: listing only so the model knows what's already tested.
-        if (testFiles.Count > 0)
-        {
-            sb.AppendLine(
-                $"\n## Test files ({testFiles.Count} files — do not suggest these as missing)"
-            );
-            foreach (var f in testFiles)
-                sb.AppendLine($"- {Path.GetRelativePath(repoRoot, f)}");
-        }
-
-        // Roslyn structural summary: type declarations, base types, property and method
+        // ── ROSLYN AST ────────────────────────────────────────────────────────────
+        // Structural summaries: type declarations, base types, property and method
         // signatures for every production file. Compact and token-efficient.
         sb.AppendLine("\n## Structural API surface (Roslyn AST)");
         foreach (var file in contentFiles)
@@ -388,7 +402,8 @@ public sealed class RepoAssistantService : IRepoAssistantService
             sb.AppendLine("```");
         }
 
-        // Full source for Core only — these are the contracts the model needs verbatim.
+        // ── CORE CONTRACTS (verbatim) ─────────────────────────────────────────────
+        // Full source for Core only — the contracts the model must write against precisely.
         var coreDir = Path.Combine(repoRoot, "src", "Core");
         var coreFiles = contentFiles
             .Where(f => f.StartsWith(coreDir, StringComparison.OrdinalIgnoreCase))
