@@ -5,6 +5,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
 
+/// <summary>
+/// EF Core + SQLite implementation of <see cref="IAssistantRunRepository"/>.
+/// Note: SQLite does not support <see cref="DateTimeOffset"/> in ORDER BY; affected queries
+/// fetch all rows and sort client-side.
+/// </summary>
 public class AssistantRunRepository(AssistantDbContext db) : IAssistantRunRepository
 {
     public async Task<AssistantRun> AddAsync(

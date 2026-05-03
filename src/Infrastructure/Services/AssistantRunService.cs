@@ -3,6 +3,11 @@ using Core.Services;
 
 namespace Infrastructure.Services;
 
+/// <summary>
+/// Orchestrates the human-in-the-loop workflow. Delegates persistence to
+/// <see cref="IAssistantRunRepository"/> and AI generation to <see cref="IRepoAssistantService"/>.
+/// All state-machine guards throw <see cref="InvalidOperationException"/> on invalid transitions.
+/// </summary>
 public class AssistantRunService(
     IAssistantRunRepository repository,
     IRepoAssistantService repoAssistant
