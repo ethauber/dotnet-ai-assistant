@@ -71,3 +71,32 @@
 }
 
 <p style="margin-top:1rem;"><a asp-page="/Runs">← Back to Recent Runs</a></p>
+
+@if (Model.Events.Count > 0)
+{
+    <div class="card">
+        <h2>Audit Trail</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+            <thead>
+                <tr style="text-align:left;border-bottom:1px solid #ddd;">
+                    <th style="padding:0.4rem 0.75rem;">Time</th>
+                    <th style="padding:0.4rem 0.75rem;">Action</th>
+                    <th style="padding:0.4rem 0.75rem;">Actor</th>
+                    <th style="padding:0.4rem 0.75rem;">Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ev in Model.Events)
+                {
+                    <tr style="border-bottom:1px solid #f0f0f0;">
+                        <td style="padding:0.4rem 0.75rem;white-space:nowrap;">
+                            @ev.OccurredUtc.ToLocalTime().ToString("HH:mm:ss")</td>
+                            <td style="padding:0.4rem 0.75rem;">@ev.Action</td>
+                            <td style="padding:0.4rem 0.75rem;">@ev.ActorType</td>
+                            <td style="padding:0.4rem 0.75rem;color:#666;">@ev.Detail</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }

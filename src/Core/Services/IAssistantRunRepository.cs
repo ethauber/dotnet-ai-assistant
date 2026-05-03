@@ -12,4 +12,8 @@ public interface IAssistantRunRepository
     );
     Task UpdateAsync(AssistantRun run, CancellationToken cancellationToken = default);
     Task AddEventAsync(AssistantRunEvent runEvent, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AssistantRunEvent>> GetEventsForRunAsync(
+        Guid runId,
+        CancellationToken cancellationToken = default
+    );
 }

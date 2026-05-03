@@ -5,9 +5,11 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace Api.Pages;
 
-public class ReviewModel(IAssistantRunService service) : PageModel
+public class ReviewModel(IAssistantRunService service, IAssistantRunRepository repository)
+    : PageModel
 {
     public AssistantRunViewModel? Run { get; set; }
+    public IReadOnlyList<AssistantRunEvent> Events { get; set; } = [];
     public string? ErrorMessage { get; set; }
 
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken cancellationToken)
@@ -16,6 +18,7 @@ public class ReviewModel(IAssistantRunService service) : PageModel
         if (run is null)
             return NotFound();
         Run = AssistantRunViewModel.From(run);
+        Events = await repository.GetEventsForRunAsync(id, cancellationToken);
         return Page();
     }
 

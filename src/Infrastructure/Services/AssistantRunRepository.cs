@@ -46,4 +46,16 @@ public class AssistantRunRepository(AssistantDbContext db) : IAssistantRunReposi
         db.AssistantRunEvents.Add(runEvent);
         await db.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<AssistantRunEvent>> GetEventsForRunAsync(
+        Guid runId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // SQLite does not support DateTimeOffset in ORDER BY; sort on the client after fetching.
+        var events = await db
+            .AssistantRunEvents.Where(e => e.RunId == runId)
+            .ToListAsync(cancellationToken);
+        return events.OrderBy(e => e.OccurredUtc).ToList();
+    }
 }

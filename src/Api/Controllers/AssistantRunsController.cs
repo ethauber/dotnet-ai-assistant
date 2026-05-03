@@ -36,17 +36,35 @@ public class AssistantRunsController(
     public async Task<IActionResult> GenerateDraft(Guid id, CancellationToken cancellationToken)
     {
         logger.LogInformation("Generating draft for run {RunId}", id);
-        var run = await service.GenerateDraftAsync(id, cancellationToken);
-        logger.LogInformation("Draft generated for run {RunId}", id);
-        return Ok(AssistantRunResponse.From(run));
+        try
+        {
+            var run = await service.GenerateDraftAsync(id, cancellationToken);
+            logger.LogInformation("Draft generated for run {RunId}", id);
+            return Ok(AssistantRunResponse.From(run));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFoundProblem(ex.Message);
+        }
     }
 
     [HttpPost("{id:guid}/approve")]
     public async Task<IActionResult> Approve(Guid id, CancellationToken cancellationToken)
     {
         logger.LogInformation("Approving run {RunId}", id);
-        var run = await service.ApproveAsync(id, cancellationToken);
-        return Ok(AssistantRunResponse.From(run));
+        try
+        {
+            var run = await service.ApproveAsync(id, cancellationToken);
+            return Ok(AssistantRunResponse.From(run));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFoundProblem(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ConflictProblem(ex.Message);
+        }
     }
 
     [HttpPost("{id:guid}/reject")]
@@ -57,8 +75,19 @@ public class AssistantRunsController(
     )
     {
         logger.LogInformation("Rejecting run {RunId}", id);
-        var run = await service.RejectAsync(id, request.Reason, cancellationToken);
-        return Ok(AssistantRunResponse.From(run));
+        try
+        {
+            var run = await service.RejectAsync(id, request.Reason, cancellationToken);
+            return Ok(AssistantRunResponse.From(run));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFoundProblem(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ConflictProblem(ex.Message);
+        }
     }
 
     [HttpPost("{id:guid}/edit-and-approve")]
@@ -69,16 +98,42 @@ public class AssistantRunsController(
     )
     {
         logger.LogInformation("Edit-and-approve for run {RunId}", id);
-        var run = await service.EditAndApproveAsync(id, request.EditedOutput, cancellationToken);
-        return Ok(AssistantRunResponse.From(run));
+        try
+        {
+            var run = await service.EditAndApproveAsync(
+                id,
+                request.EditedOutput,
+                cancellationToken
+            );
+            return Ok(AssistantRunResponse.From(run));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFoundProblem(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ConflictProblem(ex.Message);
+        }
     }
 
     [HttpPost("{id:guid}/regenerate")]
     public async Task<IActionResult> Regenerate(Guid id, CancellationToken cancellationToken)
     {
         logger.LogInformation("Regenerating draft for run {RunId}", id);
-        var run = await service.RegenerateAsync(id, cancellationToken);
-        return Ok(AssistantRunResponse.From(run));
+        try
+        {
+            var run = await service.RegenerateAsync(id, cancellationToken);
+            return Ok(AssistantRunResponse.From(run));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFoundProblem(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ConflictProblem(ex.Message);
+        }
     }
 
     [HttpGet("{id:guid}")]
@@ -99,4 +154,14 @@ public class AssistantRunsController(
         var runs = await service.ListRecentAsync(count, cancellationToken);
         return Ok(runs.Select(AssistantRunResponse.From));
     }
+
+    private ObjectResult NotFoundProblem(string detail) =>
+        Problem(title: "Run not found", detail: detail, statusCode: StatusCodes.Status404NotFound);
+
+    private ObjectResult ConflictProblem(string detail) =>
+        Problem(
+            title: "Invalid state transition",
+            detail: detail,
+            statusCode: StatusCodes.Status409Conflict
+        );
 }
