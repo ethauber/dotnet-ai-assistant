@@ -9,24 +9,24 @@
 * **Exceptions:** Emit RFC 7807 `ProblemDetails`. Map Domain Exceptions to specific 4xx codes. Unhandled exceptions are 500s; strictly mask stack traces and raw upstream errors (e.g., AWS details) from clients.
 * **Logging:** Use structured logging (`ILogger`) tagged with `CorrelationId`. Record the intent (entry point) and outcome (exit point/duration).
 * **Upstream HTTP:** Log outbound calls at `Debug` with full request body (endpoint, model, parameters, payload) *before* execution. Log `Warning` with status code, model, endpoint, and response body on non-2xx results.
+* **DB Log Sink:** Register `RunLogSink` as a singleton `ILogEventSink` using `IServiceScopeFactory`. Filter `Information`+ logs from API/Infra/Core by `{RunId}`, ensuring all exceptions are swallowed.
 
 ## 3. AI & Bedrock Specifics
 * **Statelessness:** Maintain a completely stateless Bedrock adapter. Isolate all conversation history management inside a dedicated Core service.
 * **Resiliency:** Actively recover from `ThrottlingException` (HTTP 429) with exponential backoff or propagate "Service Busy". Validate prompt sizes against target model token limits.
 * **Local LLMs:** Set `client.Timeout = TimeSpan.FromSeconds(120)` to override the default 30s `HttpClient` limit for local CPU-bound models.
-* **Prompty Parsing:** Use `[ \t]*` (instead of `\s*`) after the colon in regexes to prevent matching across line boundaries in multiline YAML blocks.
+* **Prompty Parsing:** Use `[ \t]*` (instead of `\s*`) after the colon in regexes to prevent matching across line boundaries in multiline YAML blocks. Keep the prompty system prompt perfectly synced with current architecture to avoid stale AI suggestions.
 
 ## 4. Testing Strategy (xUnit)
 * **Setup:** Use the class constructor for `beforeEach` shared setup. Express exactly one unique behavior per test.
 * **Factories:** Extract private `CreateService(...)` helpers to supply default dependencies (e.g., `NullLogger<T>.Instance`), keeping test bodies focused on their unique intent.
-* **Isolation:** Mock *only* external I/O boundaries. Allow Controller -> Service -> Adapter flows to execute using real implementations. Use `WebApplicationFactory` for integration tests.
+* **Isolation & WAF:** Mock *only* external I/O boundaries. Use `WebApplicationFactory` for integration tests, maintaining the exact same EF provider (e.g., temp-file SQLite `DataSource=/tmp/test-{Guid}.db`) instead of swapping to InMemory to prevent singleton provider DI crashes.
 * **State Machines:** Use `[Theory, InlineData]` to cover every invalid status transition in a single test method (one `InlineData` per disallowed status).
 * **Verification:** After refactoring, write a numbered functional checklist (`dotnet test`, `dotnet run` + `curl`/`Scalar` steps) so developers can confirm zero regressions.
 
 ## 5. Development Standards
-* **Tooling:** Target **.NET 10**. Add `<UserSecretsId>dotnet-ai-assistant-api</UserSecretsId>` in `Api.csproj` for `--id`-less usage.
-* **Quality Gates:** Run `dotnet csharpier format .` and `semgrep scan --config auto --config semgrep-rules.yml .` before commits. Treat Semgrep rules as mandatory local fixes.
-* **Plan Tracking:** Pair every `docs/plans/PLAN-NNN-*.md` with a live `PLAN-NNN-progress.md`. Mark items complete as they land, track out-of-plan fixes in a separate table, and update before ending the session.
-* **Instruction Updates:** Append new conventions, constraints, or hard-won fixes to this file when it will provide the highest signal and clarity to future developers.
-* **Razor Pages:** On **every** form that calls a slow upstream (initial submit, regenerate, edit-and-approve, approve, reject), disable the submit button and show a CSS spinner with a context-specific message (e.g., "Regenerating — this may take a minute…" vs "Saving…"). Apply `addEventListener('submit', ...)` to each form independently so only the clicked form's button disables. Escape Razor syntax using `@@keyframes`. The prompty system prompt must be kept up to date with the current repo architecture — stale descriptions cause the model to suggest already-implemented patterns or miss existing entry points.
-* **WAF + EF Core provider conflict:** When replacing `AddDbContext` in `WebApplicationFactory.ConfigureServices`, use the **same** provider (e.g., SQLite with a temp-file path `DataSource=/tmp/test-{Guid}.db`) rather than swapping to the InMemory provider. EF Core registers provider-specific singleton services in the ASP.NET DI container; adding a second provider alongside causes an "only a single database provider" exception at startup. Temp-file SQLite is isolated per test class and works with `Database.Migrate()`.
+* **Tooling:** Target **.NET 10** and use `http://localhost:50123` (avoiding macOS port 5000 conflicts). Add `<UserSecretsId>dotnet-ai-assistant-api</UserSecretsId>` in `Api.csproj` for `--id`-less usage.
+* **Quality Gates:** Gate commits with `dotnet csharpier format .`, `semgrep scan --config auto --config semgrep-rules.yml .`, and the mandatory `scripts/check-migrations.sh` pre-commit hook.
+* **EF Core Data:** Migrations are strictly mandatory for any `DbSet` change; never handwrite them. Suppress `PendingModelChangesWarning` exactly once inside `AssistantDbContext.OnConfiguring`.
+* **Razor Pages UX:** On *every* form calling a slow upstream, disable the submit button independently via `addEventListener('submit', ...)` and show a context-specific CSS spinner. Escape Razor syntax in CSS using `@@keyframes`.
+* **Workflow:** Pair every `docs/plans/PLAN-NNN-*.md` with a live `PLAN-NNN-progress.md`. Mark items complete as they land, track out-of-plan fixes, and append new hard-won conventions to this directives file immediately.

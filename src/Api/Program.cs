@@ -1,3 +1,4 @@
+using Api;
 using Api.Middleware;
 using Core.Services;
 using Infrastructure.Data;
@@ -6,6 +7,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.SemanticKernel;
 using Scalar.AspNetCore;
 using Serilog;
+using Serilog.Debugging;
+using Serilog.Events;
+using Serilog.Sinks.PeriodicBatching;
+
+SelfLog.Enable(msg => Console.Error.WriteLine("[serilog-selflog] {0}", msg));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,13 +23,35 @@ builder.Host.UseSerilog(
             "logs",
             "assistant-.log"
         );
+        var sqliteDbPath = Path.Combine(context.HostingEnvironment.ContentRootPath, "assistant.db");
+        var batchingSink = new PeriodicBatchingSink(
+            new SQLiteLogSink(sqliteDbPath),
+            new PeriodicBatchingSinkOptions
+            {
+                BatchSizeLimit = 50,
+                Period = TimeSpan.FromSeconds(2),
+            }
+        );
+
         configuration
             .ReadFrom.Configuration(context.Configuration)
-            .ReadFrom.Services(services)
             .WriteTo.File(
                 logPath,
                 rollingInterval: RollingInterval.Day,
                 outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+            )
+            .WriteTo.Logger(lc =>
+                lc.Filter.ByIncludingOnly(e =>
+                        e.Level >= LogEventLevel.Information
+                        && e.Properties.TryGetValue("SourceContext", out var sc)
+                        && sc is ScalarValue { Value: string ctx }
+                        && (
+                            ctx.StartsWith("Api.", StringComparison.Ordinal)
+                            || ctx.StartsWith("Infrastructure.", StringComparison.Ordinal)
+                            || ctx.StartsWith("Core.", StringComparison.Ordinal)
+                        )
+                    )
+                    .WriteTo.Sink(batchingSink)
             );
     }
 );

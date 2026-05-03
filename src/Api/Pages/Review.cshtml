@@ -197,3 +197,59 @@ document.getElementById('detail-modal').addEventListener('click', function (e) {
             </table>
         </div>
     }
+
+@if (Model.Logs.Count > 0)
+{
+    <div class="card">
+        <h2>UI Logs</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:0.8125rem;">
+            <thead>
+                <tr style="text-align:left;border-bottom:1px solid #ddd;">
+                    <th style="padding:0.4rem 0.75rem;">Time</th>
+                    <th style="padding:0.4rem 0.75rem;">Level</th>
+                    <th style="padding:0.4rem 0.75rem;">Source</th>
+                    <th style="padding:0.4rem 0.75rem;">Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in Model.Logs)
+                {
+                    var shortSource = log.SourceContext is null ? string.Empty
+                        : log.SourceContext
+                            .Replace("Infrastructure.Services.", string.Empty)
+                            .Replace("Api.Pages.", string.Empty)
+                            .Replace("Api.Controllers.", string.Empty)
+                            .Replace("Api.", string.Empty)
+                            .Replace("Core.Services.", string.Empty);
+                    var levelStyle = log.Level switch
+                    {
+                        "Warning" => "background:#fff3cd;color:#856404;padding:0.1rem 0.4rem;border-radius:3px;font-size:0.75rem;font-weight:600;",
+                        "Error" or "Fatal" => "background:#f8d7da;color:#842029;padding:0.1rem 0.4rem;border-radius:3px;font-size:0.75rem;font-weight:600;",
+                        _ => "background:#d1e7dd;color:#0a3622;padding:0.1rem 0.4rem;border-radius:3px;font-size:0.75rem;font-weight:600;"
+                    };
+                    var msgPreview = log.RenderedMessage.Length > 120
+                        ? log.RenderedMessage[..120].Replace("\n", " ") + "…"
+                        : log.RenderedMessage.Replace("\n", " ");
+                    var fullDetail = log.RenderedMessage + (log.Exception is not null ? "\n\n" + log.Exception : string.Empty);
+                    <tr style="border-bottom:1px solid #f0f0f0;">
+                        <td style="padding:0.4rem 0.75rem;white-space:nowrap;color:#666;">
+                            @log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</td>
+                        <td style="padding:0.4rem 0.75rem;">
+                            <span style="@levelStyle">@log.Level</span></td>
+                        <td style="padding:0.4rem 0.75rem;color:#666;white-space:nowrap;">@shortSource</td>
+                        <td style="padding:0.4rem 0.75rem;">
+                            @if (log.RenderedMessage.Length > 120 || log.Exception is not null)
+                            {
+                                <span class="detail-preview" style="cursor:pointer;text-decoration:underline dotted;" data-detail="@fullDetail" title="Click to expand">@msgPreview</span>
+                            }
+                            else
+                            {
+                                @msgPreview
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

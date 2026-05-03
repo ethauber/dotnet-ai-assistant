@@ -1,5 +1,6 @@
 using Core.Entities;
 using Core.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services;
 
@@ -10,9 +11,60 @@ namespace Infrastructure.Services;
 /// </summary>
 public class AssistantRunService(
     IAssistantRunRepository repository,
-    IRepoAssistantService repoAssistant
+    IRepoAssistantService repoAssistant,
+    ILogger<AssistantRunService> logger
 ) : IAssistantRunService
 {
+    // High-performance LoggerMessage delegates — avoids per-call boxing and string allocation.
+    private static readonly Action<ILogger, Guid, string?, Exception?> LogRunCreated =
+        LoggerMessage.Define<Guid, string?>(
+            LogLevel.Information,
+            new EventId(1, "RunCreated"),
+            "Run {RunId} created template={TemplateName}"
+        );
+
+    private static readonly Action<ILogger, Guid, string?, Exception?> LogGeneratingDraft =
+        LoggerMessage.Define<Guid, string?>(
+            LogLevel.Information,
+            new EventId(2, "GeneratingDraft"),
+            "Generating draft for run {RunId} template={TemplateName}"
+        );
+
+    private static readonly Action<ILogger, Guid, string?, Exception?> LogDraftGenerated =
+        LoggerMessage.Define<Guid, string?>(
+            LogLevel.Information,
+            new EventId(3, "DraftGenerated"),
+            "Draft generated for run {RunId} version={Version}"
+        );
+
+    private static readonly Action<ILogger, Guid, Exception?> LogRunApproved =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Information,
+            new EventId(4, "RunApproved"),
+            "Run {RunId} approved"
+        );
+
+    private static readonly Action<ILogger, Guid, string, Exception?> LogRunRejected =
+        LoggerMessage.Define<Guid, string>(
+            LogLevel.Information,
+            new EventId(5, "RunRejected"),
+            "Run {RunId} rejected reason={Reason}"
+        );
+
+    private static readonly Action<ILogger, Guid, Exception?> LogRunEditedAndApproved =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Information,
+            new EventId(6, "RunEditedAndApproved"),
+            "Run {RunId} edited and approved"
+        );
+
+    private static readonly Action<ILogger, Guid, Exception?> LogRegenerationRequested =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Information,
+            new EventId(7, "RegenerationRequested"),
+            "Run {RunId} regeneration requested"
+        );
+
     public async Task<AssistantRun> CreateAsync(
         string userGoal,
         string? projectArea,
@@ -41,6 +93,7 @@ public class AssistantRunService(
             cancellationToken
         );
 
+        LogRunCreated(logger, run.Id, run.PromptTemplateName, null);
         return run;
     }
 
@@ -51,6 +104,8 @@ public class AssistantRunService(
     {
         var run = await RequireRunAsync(id, cancellationToken);
         RequireStatus(run, AssistantRunStatus.Submitted, AssistantRunStatus.Rejected);
+
+        LogGeneratingDraft(logger, id, run.PromptTemplateName, null);
 
         var result = await repoAssistant.RunAsync(
             run.PromptTemplateName ?? "demo-assistant",
@@ -70,6 +125,7 @@ public class AssistantRunService(
             detail: $"template:{run.PromptTemplateName} v{run.PromptTemplateVersion}\n\n{run.GeneratedDraft}",
             cancellationToken: cancellationToken
         );
+        LogDraftGenerated(logger, id, run.PromptTemplateVersion, null);
         return run;
     }
 
@@ -91,6 +147,7 @@ public class AssistantRunService(
             detail: run.FinalOutput,
             cancellationToken: cancellationToken
         );
+        LogRunApproved(logger, id, null);
         return run;
     }
 
@@ -106,6 +163,7 @@ public class AssistantRunService(
         run.Status = AssistantRunStatus.Rejected;
 
         await CommitAsync(run, "Rejected", ActorType.Human, reason, cancellationToken);
+        LogRunRejected(logger, id, reason ?? string.Empty, null);
         return run;
     }
 
@@ -128,6 +186,7 @@ public class AssistantRunService(
             detail: $"original:\n{run.GeneratedDraft}\n\n---edited & approved:\n{editedOutput}",
             cancellationToken: cancellationToken
         );
+        LogRunEditedAndApproved(logger, id, null);
         return run;
     }
 
@@ -149,6 +208,7 @@ public class AssistantRunService(
             detail: run.PromptTemplateName,
             cancellationToken: cancellationToken
         );
+        LogRegenerationRequested(logger, id, null);
         return await GenerateDraftAsync(run.Id, cancellationToken);
     }
 

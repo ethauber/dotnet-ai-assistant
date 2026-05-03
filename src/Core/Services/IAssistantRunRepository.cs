@@ -31,4 +31,10 @@ public interface IAssistantRunRepository
         Guid runId,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>Returns all DB log entries for a run ordered by insertion sequence.</summary>
+    Task<IReadOnlyList<RunLog>> GetLogsForRunAsync(
+        Guid runId,
+        CancellationToken cancellationToken = default
+    );
 }

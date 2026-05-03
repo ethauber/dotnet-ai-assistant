@@ -10,6 +10,7 @@ public class ReviewModel(IAssistantRunService service, IAssistantRunRepository r
 {
     public AssistantRunViewModel? Run { get; set; }
     public IReadOnlyList<AssistantRunEvent> Events { get; set; } = [];
+    public IReadOnlyList<RunLog> Logs { get; set; } = [];
     public string? ErrorMessage { get; set; }
 
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken cancellationToken)
@@ -19,6 +20,7 @@ public class ReviewModel(IAssistantRunService service, IAssistantRunRepository r
             return NotFound();
         Run = AssistantRunViewModel.From(run);
         Events = await repository.GetEventsForRunAsync(id, cancellationToken);
+        Logs = await repository.GetLogsForRunAsync(id, cancellationToken);
         return Page();
     }
 

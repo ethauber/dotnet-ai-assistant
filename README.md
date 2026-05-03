@@ -60,12 +60,12 @@ dotnet user-secrets set "SemanticKernel:Endpoint" "http://localhost:11434/v1" --
 dotnet run --project src/Api/Api.csproj
 ```
 
-The browser opens automatically at `http://localhost:5000/scalar/v1`.
+The browser opens automatically at `http://localhost:50123/scalar/v1`.
 
 4. Explore API docs:
 
-- OpenAPI: `http://localhost:5000/openapi/v1.json`
-- Scalar UI (development): `http://localhost:5000/scalar/v1`
+- OpenAPI: `http://localhost:50123/openapi/v1.json`
+- Scalar UI (development): `http://localhost:50123/scalar/v1`
 
 5. Run static analysis before pushing:
 
@@ -78,13 +78,13 @@ semgrep scan --config auto --config semgrep-rules.yml .
 Health check:
 
 ```bash
-curl -s http://localhost:5000/status | jq .
+curl -s http://localhost:50123/status | jq .
 ```
 
 Chat completion:
 
 ```bash
-curl -s -X POST http://localhost:5000/chat \
+curl -s -X POST http://localhost:50123/chat \
 	-H "Content-Type: application/json" \
 	-d '{"message":"Say hello in one sentence"}' | jq .
 ```
@@ -92,7 +92,7 @@ curl -s -X POST http://localhost:5000/chat \
 Repo assistant:
 
 ```bash
-curl -s -X POST http://localhost:5000/repo-assistant/run \
+curl -s -X POST http://localhost:50123/repo-assistant/run \
 	-H "Content-Type: application/json" \
 	-d '{"userGoal":"Summarize the API layer","projectArea":"api"}' | jq .
 ```

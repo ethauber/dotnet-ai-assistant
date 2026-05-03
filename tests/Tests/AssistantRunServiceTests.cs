@@ -2,6 +2,7 @@ using Core.Entities;
 using Core.Services;
 using FluentAssertions;
 using Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace Tests;
@@ -14,7 +15,11 @@ public class AssistantRunServiceTests
 
     public AssistantRunServiceTests()
     {
-        _service = new AssistantRunService(_repository.Object, _repoAssistant.Object);
+        _service = new AssistantRunService(
+            _repository.Object,
+            _repoAssistant.Object,
+            NullLogger<AssistantRunService>.Instance
+        );
     }
 
     // ── Create ────────────────────────────────────────────────────────────────
