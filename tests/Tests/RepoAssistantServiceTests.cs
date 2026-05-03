@@ -204,6 +204,126 @@ public sealed class RepoAssistantServiceTests
             .WithMessage("*no assistant content*");
     }
 
+    [Fact]
+    public async Task RunAsync_InjectsFileTreeAndSourceIntoRequest_WhenRepoRootProvided()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"repo-ctx-{Guid.NewGuid():N}");
+        var coreDir = Path.Combine(tempRoot, "src", "Core", "Services");
+        Directory.CreateDirectory(coreDir);
+        await File.WriteAllTextAsync(
+            Path.Combine(coreDir, "IMyService.cs"),
+            "public interface IMyService { }"
+        );
+
+        string? capturedBody = null;
+        var handler = new StubHttpMessageHandler(
+            async (req, ct) =>
+            {
+                capturedBody = await req.Content!.ReadAsStringAsync(ct);
+                return OkResponse("ok");
+            }
+        );
+
+        var service = CreateService(handler, GetPromptPath(), repoRootPath: tempRoot);
+        try
+        {
+            await service.RunAsync("test goal");
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+
+        capturedBody.Should().Contain("IMyService.cs");
+        capturedBody.Should().Contain("IMyService");
+    }
+
+    [Fact]
+    public async Task RunAsync_ExcludesBinAndObjFromContext()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"repo-ctx-{Guid.NewGuid():N}");
+        var coreDir = Path.Combine(tempRoot, "src", "Core");
+        var binDir = Path.Combine(tempRoot, "src", "Core", "bin", "Debug");
+        var objDir = Path.Combine(tempRoot, "src", "Core", "obj", "net10.0");
+        Directory.CreateDirectory(coreDir);
+        Directory.CreateDirectory(binDir);
+        Directory.CreateDirectory(objDir);
+        await File.WriteAllTextAsync(Path.Combine(coreDir, "IReal.cs"), "// real");
+        await File.WriteAllTextAsync(Path.Combine(binDir, "Compiled.cs"), "// should not appear");
+        await File.WriteAllTextAsync(Path.Combine(objDir, "Generated.cs"), "// should not appear");
+
+        string? capturedBody = null;
+        var handler = new StubHttpMessageHandler(
+            async (req, ct) =>
+            {
+                capturedBody = await req.Content!.ReadAsStringAsync(ct);
+                return OkResponse("ok");
+            }
+        );
+
+        var service = CreateService(handler, GetPromptPath(), repoRootPath: tempRoot);
+        try
+        {
+            await service.RunAsync("test");
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+
+        capturedBody.Should().Contain("IReal.cs");
+        capturedBody.Should().NotContain("Compiled.cs");
+        capturedBody.Should().NotContain("Generated.cs");
+    }
+
+    [Fact]
+    public async Task RunAsync_AppendsCallerContextAfterRepoContext()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"repo-ctx-{Guid.NewGuid():N}");
+        var coreDir = Path.Combine(tempRoot, "src", "Core");
+        Directory.CreateDirectory(coreDir);
+        await File.WriteAllTextAsync(Path.Combine(coreDir, "ISvc.cs"), "// repo content");
+
+        string? capturedBody = null;
+        var handler = new StubHttpMessageHandler(
+            async (req, ct) =>
+            {
+                capturedBody = await req.Content!.ReadAsStringAsync(ct);
+                return OkResponse("ok");
+            }
+        );
+
+        var service = CreateService(handler, GetPromptPath(), repoRootPath: tempRoot);
+        try
+        {
+            await service.RunAsync("test", fileContext: "CALLER_SPECIFIC_SNIPPET");
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+
+        capturedBody.Should().Contain("ISvc.cs");
+        capturedBody.Should().Contain("CALLER_SPECIFIC_SNIPPET");
+        capturedBody!
+            .IndexOf("ISvc.cs", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(capturedBody.IndexOf("CALLER_SPECIFIC_SNIPPET", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_WorksNormally_WhenNoRepoRootProvided()
+    {
+        var service = CreateService(
+            (_, _) => Task.FromResult(OkResponse("reply without repo context")),
+            GetPromptPath()
+        );
+
+        var result = await service.RunAsync("test goal", fileContext: "some snippet");
+
+        result.Should().Be("reply without repo context");
+    }
+
     private static RepoAssistantService CreateService(
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder,
         string promptPath
@@ -211,8 +331,25 @@ public sealed class RepoAssistantServiceTests
 
     private static RepoAssistantService CreateService(
         StubHttpMessageHandler handler,
-        string promptPath
-    ) => new(new HttpClient(handler), promptPath, NullLogger<RepoAssistantService>.Instance);
+        string promptPath,
+        string? repoRootPath = null
+    ) =>
+        new(
+            new HttpClient(handler),
+            promptPath,
+            NullLogger<RepoAssistantService>.Instance,
+            repoRootPath
+        );
+
+    private static HttpResponseMessage OkResponse(string content) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $"{{\"choices\":[{{\"message\":{{\"content\":\"{content}\"}}}}]}}",
+                Encoding.UTF8,
+                "application/json"
+            ),
+        };
 
     private static string GetPromptPath()
     {

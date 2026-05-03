@@ -60,7 +60,8 @@ builder.Services.AddTransient<IRepoAssistantService>(services =>
     return new RepoAssistantService(
         httpClientFactory.CreateClient("RepoAssistant"),
         promptPath,
-        services.GetRequiredService<ILogger<RepoAssistantService>>()
+        services.GetRequiredService<ILogger<RepoAssistantService>>(),
+        repoRootPath: Path.GetFullPath(Path.Combine(environment.ContentRootPath, "..", ".."))
     );
 });
 

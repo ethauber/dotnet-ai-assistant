@@ -19,17 +19,23 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
     private readonly HttpClient _httpClient;
     private readonly string _promptyPath;
+    private readonly string? _repoRootPath;
     private readonly ILogger<RepoAssistantService> _logger;
+
+    // Simple single-entry cache: stamp is the max LastWriteTimeUtc of watched files.
+    private (DateTime Stamp, string Context) _contextCache;
 
     public RepoAssistantService(
         HttpClient httpClient,
         string promptyPath,
-        ILogger<RepoAssistantService> logger
+        ILogger<RepoAssistantService> logger,
+        string? repoRootPath = null
     )
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _promptyPath = promptyPath ?? throw new ArgumentNullException(nameof(promptyPath));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _repoRootPath = repoRootPath;
     }
 
     public async Task<string> RunAsync(
@@ -40,10 +46,11 @@ public sealed class RepoAssistantService : IRepoAssistantService
     )
     {
         var prompt = await LoadPromptAsync(cancellationToken);
+        var resolvedContext = await ResolveContextAsync(fileContext, cancellationToken);
 
         for (var attempt = 0; attempt <= MaxThrottleRetries; attempt++)
         {
-            using var request = BuildRequest(prompt, userGoal, fileContext, projectArea);
+            using var request = BuildRequest(prompt, userGoal, resolvedContext, projectArea);
 
             try
             {
@@ -281,6 +288,149 @@ public sealed class RepoAssistantService : IRepoAssistantService
         {
             throw new PromptTemplateNotFoundException(_promptyPath);
         }
+    }
+
+    private async Task<string?> ResolveContextAsync(
+        string? callerContext,
+        CancellationToken cancellationToken
+    )
+    {
+        string? repoContext = null;
+        if (!string.IsNullOrWhiteSpace(_repoRootPath) && Directory.Exists(_repoRootPath))
+        {
+            repoContext = await GenerateRepoContextAsync(_repoRootPath, cancellationToken);
+        }
+
+        if (string.IsNullOrWhiteSpace(repoContext))
+            return callerContext;
+
+        if (string.IsNullOrWhiteSpace(callerContext))
+            return repoContext;
+
+        return repoContext + "\n\n---\n\n" + callerContext;
+    }
+
+    private async Task<string> GenerateRepoContextAsync(
+        string repoRoot,
+        CancellationToken cancellationToken
+    )
+    {
+        static bool IsProductionCode(string path) =>
+            !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+            && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}");
+
+        var srcDir = Path.Combine(repoRoot, "src");
+        var testsDir = Path.Combine(repoRoot, "tests");
+
+        // Full content: every .cs file under src/ (Core, Infrastructure, Api)
+        var contentFiles = Directory.Exists(srcDir)
+            ? Directory
+                .EnumerateFiles(srcDir, "*.cs", SearchOption.AllDirectories)
+                .Where(IsProductionCode)
+                .OrderBy(f => f)
+                .ToList()
+            : [];
+
+        // Test files — listed by name only to prove coverage without consuming tokens.
+        var testFiles = Directory.Exists(testsDir)
+            ? Directory
+                .EnumerateFiles(testsDir, "*.cs", SearchOption.AllDirectories)
+                .Where(IsProductionCode)
+                .OrderBy(f => f)
+                .ToList()
+            : [];
+
+        // Cache invalidation: max LastWriteTimeUtc across all watched files.
+        var allWatched = contentFiles.Concat(testFiles).ToList();
+        var stamp =
+            allWatched.Count > 0
+                ? allWatched.Max(f => File.GetLastWriteTimeUtc(f))
+                : DateTime.MinValue;
+        lock (this)
+        {
+            if (_contextCache.Stamp == stamp && !string.IsNullOrEmpty(_contextCache.Context))
+                return _contextCache.Context;
+        }
+
+        var sb = new StringBuilder();
+
+        // File tree.
+        sb.AppendLine("## Source file tree");
+        sb.AppendLine("```");
+        if (Directory.Exists(srcDir))
+            AppendTree(sb, srcDir, repoRoot, 0);
+        sb.AppendLine("```");
+
+        // Test coverage: listing only so the model knows what's already tested.
+        if (testFiles.Count > 0)
+        {
+            sb.AppendLine(
+                $"\n## Test files ({testFiles.Count} files — do not suggest these as missing)"
+            );
+            foreach (var f in testFiles)
+                sb.AppendLine($"- {Path.GetRelativePath(repoRoot, f)}");
+        }
+
+        // Roslyn structural summary: type declarations, base types, property and method
+        // signatures for every production file. Compact and token-efficient.
+        sb.AppendLine("\n## Structural API surface (Roslyn AST)");
+        foreach (var file in contentFiles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relativePath = Path.GetRelativePath(repoRoot, file);
+            var source = await File.ReadAllTextAsync(file, cancellationToken);
+            var summary = RoslynAstExtractor.ExtractSummary(source);
+            if (string.IsNullOrWhiteSpace(summary))
+                continue;
+            sb.AppendLine($"\n### {relativePath}");
+            sb.AppendLine("```");
+            sb.AppendLine(summary);
+            sb.AppendLine("```");
+        }
+
+        // Full source for Core only — these are the contracts the model needs verbatim.
+        var coreDir = Path.Combine(repoRoot, "src", "Core");
+        var coreFiles = contentFiles
+            .Where(f => f.StartsWith(coreDir, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (coreFiles.Count > 0)
+        {
+            sb.AppendLine("\n## Full source: Core contracts");
+            foreach (var file in coreFiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var relativePath = Path.GetRelativePath(repoRoot, file);
+                var content = await File.ReadAllTextAsync(file, cancellationToken);
+                sb.AppendLine($"\n### {relativePath}");
+                sb.AppendLine("```csharp");
+                sb.AppendLine(content.TrimEnd());
+                sb.AppendLine("```");
+            }
+        }
+
+        var result = sb.ToString();
+        lock (this)
+        {
+            _contextCache = (stamp, result);
+        }
+        return result;
+    }
+
+    private static void AppendTree(StringBuilder sb, string dir, string repoRoot, int depth)
+    {
+        var indent = new string(' ', depth * 2);
+        var dirName = Path.GetFileName(dir);
+        if (dirName is "bin" or "obj")
+            return;
+
+        if (depth > 0)
+            sb.AppendLine($"{indent}{dirName}/");
+
+        foreach (var subDir in Directory.EnumerateDirectories(dir).OrderBy(d => d))
+            AppendTree(sb, subDir, repoRoot, depth + 1);
+
+        foreach (var file in Directory.EnumerateFiles(dir).OrderBy(f => f))
+            sb.AppendLine($"{indent}  {Path.GetFileName(file)}");
     }
 
     private static string BuildUserMessage(
