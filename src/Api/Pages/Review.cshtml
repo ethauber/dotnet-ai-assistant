@@ -21,6 +21,16 @@
         <p><strong>Area:</strong> @run.ProjectArea</p>
     }
     <p>Status: <span class="status-badge status-@run.Status">@run.Status</span></p>
+    @if (run.PromptTemplateName is not null)
+    {
+        <p class="meta">
+            Template: <code>@run.PromptTemplateName</code>
+            @if (run.PromptTemplateVersion is not null)
+            {
+                <span>&nbsp;·&nbsp;version <code>@run.PromptTemplateVersion</code></span>
+            }
+        </p>
+    }
 </div>
 
 @if (run.GeneratedDraft is not null)

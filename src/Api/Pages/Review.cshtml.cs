@@ -84,7 +84,9 @@ public record AssistantRunViewModel(
     string? GeneratedDraft,
     string? FinalOutput,
     string Status,
-    DateTimeOffset CreatedUtc
+    DateTimeOffset CreatedUtc,
+    string? PromptTemplateName,
+    string? PromptTemplateVersion
 )
 {
     public static AssistantRunViewModel From(AssistantRun r) =>
@@ -95,6 +97,8 @@ public record AssistantRunViewModel(
             r.GeneratedDraft,
             r.FinalOutput,
             r.Status.ToString(),
-            r.CreatedUtc
+            r.CreatedUtc,
+            r.PromptTemplateName,
+            r.PromptTemplateVersion
         );
 }

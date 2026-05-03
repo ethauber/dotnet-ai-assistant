@@ -21,6 +21,7 @@ else
             <thead>
                 <tr style="background:#f0f0f0;text-align:left;">
                     <th style="padding:0.75rem 1rem;">Goal</th>
+                    <th style="padding:0.75rem 1rem;">Template</th>
                     <th style="padding:0.75rem 1rem;">Status</th>
                     <th style="padding:0.75rem 1rem;">Created</th>
                     <th style="padding:0.75rem 1rem;"></th>
@@ -33,6 +34,16 @@ else
                         <td
                             style="padding:0.75rem 1rem;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                             @run.UserGoal</td>
+                            <td style="padding:0.75rem 1rem;" class="meta">
+                                @if (run.PromptTemplateName is not null)
+                                {
+                                    <code>@run.PromptTemplateName</code>
+                                    @if (run.PromptTemplateVersion is not null)
+                                    {
+                                        <span class="meta" style="font-size:0.75rem;"> @run.PromptTemplateVersion</span>
+                                    }
+                                }
+                            </td>
                             <td style="padding:0.75rem 1rem;"><span class="status-badge status-@run.Status">@run.Status</span></td>
                             <td style="padding:0.75rem 1rem;" class="meta">@run.CreatedUtc.ToLocalTime().ToString("g")</td>
                             <td style="padding:0.75rem 1rem;"><a asp-page="/Review" asp-route-id="@run.Id">Review →</a></td>
