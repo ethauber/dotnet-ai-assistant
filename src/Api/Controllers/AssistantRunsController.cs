@@ -22,6 +22,7 @@ public class AssistantRunsController(
             request.UserGoal,
             request.ProjectArea,
             request.FileContext,
+            request.TemplateName,
             cancellationToken
         );
         logger.LogInformation("AssistantRun {RunId} created", run.Id);

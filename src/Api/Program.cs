@@ -43,26 +43,26 @@ builder.Services.AddTransient<IRepoAssistantService>(services =>
 {
     var httpClientFactory = services.GetRequiredService<IHttpClientFactory>();
     var environment = services.GetRequiredService<IHostEnvironment>();
-    var configuration = services.GetRequiredService<IConfiguration>();
 
-    var configuredPromptPath = configuration["RepoAssistant:PromptPath"];
-    var promptPath = Path.IsPathRooted(configuredPromptPath)
-        ? configuredPromptPath
-        : Path.GetFullPath(
-            Path.Combine(
-                environment.ContentRootPath,
-                string.IsNullOrWhiteSpace(configuredPromptPath)
-                    ? Path.Combine("..", "..", "prompts", "repo-assistant.prompty")
-                    : configuredPromptPath
-            )
-        );
+    var promptsDir = Path.GetFullPath(
+        Path.Combine(environment.ContentRootPath, "..", "..", "prompts")
+    );
 
     return new RepoAssistantService(
         httpClientFactory.CreateClient("RepoAssistant"),
-        promptPath,
+        promptsDir,
         services.GetRequiredService<ILogger<RepoAssistantService>>(),
         repoRootPath: Path.GetFullPath(Path.Combine(environment.ContentRootPath, "..", ".."))
     );
+});
+
+builder.Services.AddSingleton<IPromptTemplateService>(services =>
+{
+    var environment = services.GetRequiredService<IHostEnvironment>();
+    var promptsDir = Path.GetFullPath(
+        Path.Combine(environment.ContentRootPath, "..", "..", "prompts")
+    );
+    return new PromptTemplateService(promptsDir);
 });
 
 var semanticKernelModelId = builder.Configuration["SemanticKernel:ModelId"];

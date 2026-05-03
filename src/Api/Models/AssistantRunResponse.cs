@@ -11,7 +11,9 @@ public record AssistantRunResponse(
     string? FinalOutput,
     string Status,
     DateTimeOffset CreatedUtc,
-    DateTimeOffset UpdatedUtc
+    DateTimeOffset UpdatedUtc,
+    string? PromptTemplateName,
+    string? PromptTemplateVersion
 )
 {
     public static AssistantRunResponse From(AssistantRun run) =>
@@ -24,6 +26,8 @@ public record AssistantRunResponse(
             run.FinalOutput,
             run.Status.ToString(),
             run.CreatedUtc,
-            run.UpdatedUtc
+            run.UpdatedUtc,
+            run.PromptTemplateName,
+            run.PromptTemplateVersion
         );
 }

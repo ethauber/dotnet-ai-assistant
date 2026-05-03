@@ -14,7 +14,7 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Load_Prompt_And_Return_Assistant_Content()
     {
-        var promptPath = GetPromptPath();
+        var promptsDir = GetPromptsDirectory();
         string? requestPayload = null;
         var handler = new StubHttpMessageHandler(
             async (request, cancellationToken) =>
@@ -30,15 +30,16 @@ public sealed class RepoAssistantServiceTests
                 };
             }
         );
-        var service = CreateService(handler, promptPath);
+        var service = CreateService(handler, promptsDir);
 
         var result = await service.RunAsync(
+            "repo-assistant",
             "Summarize the repo",
             fileContext: "StatusController.cs",
             projectArea: "api"
         );
 
-        result.Should().Be("assistant reply");
+        result.Reply.Should().Be("assistant reply");
         requestPayload.Should().NotBeNull();
 
         using var requestDocument = JsonDocument.Parse(requestPayload!);
@@ -56,10 +57,10 @@ public sealed class RepoAssistantServiceTests
     {
         var service = CreateService(
             (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)),
-            "missing.prompty"
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("nonexistent-template", "Summarize the repo");
 
         await act.Should().ThrowAsync<PromptTemplateNotFoundException>();
     }
@@ -69,10 +70,10 @@ public sealed class RepoAssistantServiceTests
     {
         var service = CreateService(
             (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)),
-            GetPromptPath()
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         var exception = await act.Should().ThrowAsync<UpstreamServiceException>();
         exception.Which.StatusCode.Should().Be((int)HttpStatusCode.BadGateway);
@@ -89,10 +90,10 @@ public sealed class RepoAssistantServiceTests
                         Content = new StringContent("not json", Encoding.UTF8, "application/json"),
                     }
                 ),
-            GetPromptPath()
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         await act.Should()
             .ThrowAsync<UpstreamServiceException>()
@@ -114,10 +115,10 @@ public sealed class RepoAssistantServiceTests
                         ),
                     }
                 ),
-            GetPromptPath()
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         await act.Should()
             .ThrowAsync<UpstreamServiceException>()
@@ -151,12 +152,12 @@ public sealed class RepoAssistantServiceTests
                     }
                 );
             },
-            GetPromptPath()
+            GetPromptsDirectory()
         );
 
-        var result = await service.RunAsync("Summarize the repo");
+        var result = await service.RunAsync("repo-assistant", "Summarize the repo");
 
-        result.Should().Be("assistant reply");
+        result.Reply.Should().Be("assistant reply");
         attemptCount.Should().Be(3);
     }
 
@@ -170,10 +171,10 @@ public sealed class RepoAssistantServiceTests
                 throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.Zero);
                 return Task.FromResult(throttledResponse);
             },
-            GetPromptPath()
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         var exception = await act.Should().ThrowAsync<UpstreamServiceException>();
         exception.Which.StatusCode.Should().Be((int)HttpStatusCode.TooManyRequests);
@@ -194,10 +195,10 @@ public sealed class RepoAssistantServiceTests
                         ),
                     }
                 ),
-            GetPromptPath()
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         await act.Should()
             .ThrowAsync<UpstreamServiceException>()
@@ -224,10 +225,10 @@ public sealed class RepoAssistantServiceTests
             }
         );
 
-        var service = CreateService(handler, GetPromptPath(), repoRootPath: tempRoot);
+        var service = CreateService(handler, GetPromptsDirectory(), repoRootPath: tempRoot);
         try
         {
-            await service.RunAsync("test goal");
+            await service.RunAsync("repo-assistant", "test goal");
         }
         finally
         {
@@ -261,10 +262,10 @@ public sealed class RepoAssistantServiceTests
             }
         );
 
-        var service = CreateService(handler, GetPromptPath(), repoRootPath: tempRoot);
+        var service = CreateService(handler, GetPromptsDirectory(), repoRootPath: tempRoot);
         try
         {
-            await service.RunAsync("test");
+            await service.RunAsync("repo-assistant", "test");
         }
         finally
         {
@@ -293,10 +294,14 @@ public sealed class RepoAssistantServiceTests
             }
         );
 
-        var service = CreateService(handler, GetPromptPath(), repoRootPath: tempRoot);
+        var service = CreateService(handler, GetPromptsDirectory(), repoRootPath: tempRoot);
         try
         {
-            await service.RunAsync("test", fileContext: "CALLER_SPECIFIC_SNIPPET");
+            await service.RunAsync(
+                "repo-assistant",
+                "test",
+                fileContext: "CALLER_SPECIFIC_SNIPPET"
+            );
         }
         finally
         {
@@ -316,27 +321,31 @@ public sealed class RepoAssistantServiceTests
     {
         var service = CreateService(
             (_, _) => Task.FromResult(OkResponse("reply without repo context")),
-            GetPromptPath()
+            GetPromptsDirectory()
         );
 
-        var result = await service.RunAsync("test goal", fileContext: "some snippet");
+        var result = await service.RunAsync(
+            "repo-assistant",
+            "test goal",
+            fileContext: "some snippet"
+        );
 
-        result.Should().Be("reply without repo context");
+        result.Reply.Should().Be("reply without repo context");
     }
 
     private static RepoAssistantService CreateService(
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder,
-        string promptPath
-    ) => CreateService(new StubHttpMessageHandler(responder), promptPath);
+        string promptsDirectory
+    ) => CreateService(new StubHttpMessageHandler(responder), promptsDirectory);
 
     private static RepoAssistantService CreateService(
         StubHttpMessageHandler handler,
-        string promptPath,
+        string promptsDirectory,
         string? repoRootPath = null
     ) =>
         new(
             new HttpClient(handler),
-            promptPath,
+            promptsDirectory,
             NullLogger<RepoAssistantService>.Instance,
             repoRootPath
         );
@@ -351,19 +360,10 @@ public sealed class RepoAssistantServiceTests
             ),
         };
 
-    private static string GetPromptPath()
+    private static string GetPromptsDirectory()
     {
         return Path.GetFullPath(
-            Path.Combine(
-                AppContext.BaseDirectory,
-                "..",
-                "..",
-                "..",
-                "..",
-                "..",
-                "prompts",
-                "repo-assistant.prompty"
-            )
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "prompts")
         );
     }
 

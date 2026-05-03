@@ -17,6 +17,7 @@ public class AssistantRunService(
         string userGoal,
         string? projectArea,
         string? fileContext,
+        string? promptTemplateName = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -25,6 +26,7 @@ public class AssistantRunService(
             UserGoal = userGoal,
             ProjectArea = projectArea,
             FileContext = fileContext,
+            PromptTemplateName = promptTemplateName ?? "demo-assistant",
         };
 
         await repository.AddAsync(run, cancellationToken);
@@ -49,12 +51,15 @@ public class AssistantRunService(
         var run = await RequireRunAsync(id, cancellationToken);
         RequireStatus(run, AssistantRunStatus.Submitted, AssistantRunStatus.Rejected);
 
-        run.GeneratedDraft = await repoAssistant.RunAsync(
+        var result = await repoAssistant.RunAsync(
+            run.PromptTemplateName ?? "demo-assistant",
             run.UserGoal,
             run.FileContext,
             run.ProjectArea,
             cancellationToken
         );
+        run.GeneratedDraft = result.Reply;
+        run.PromptTemplateVersion = result.TemplateVersion;
         run.Status = AssistantRunStatus.NeedsHumanReview;
 
         await CommitAsync(

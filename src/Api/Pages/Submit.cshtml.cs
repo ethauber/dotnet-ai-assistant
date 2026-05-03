@@ -1,10 +1,13 @@
+using Core.Models;
 using Core.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace Api.Pages;
 
-public class SubmitModel(IAssistantRunService service) : PageModel
+public class SubmitModel(IAssistantRunService service, IPromptTemplateService templateService)
+    : PageModel
 {
     [BindProperty]
     public string UserGoal { get; set; } = string.Empty;
@@ -15,10 +18,27 @@ public class SubmitModel(IAssistantRunService service) : PageModel
     [BindProperty]
     public string? FileContext { get; set; }
 
+    [BindProperty]
+    public string TemplateName { get; set; } = "demo-assistant";
+
+    public IReadOnlyList<PromptTemplateInfo> Templates { get; private set; } = [];
+
+    public SelectList TemplateSelectList { get; private set; } =
+        new SelectList(Enumerable.Empty<object>());
+
     public string? ErrorMessage { get; set; }
+
+    public async Task OnGetAsync(CancellationToken cancellationToken)
+    {
+        Templates = await templateService.ListAsync(cancellationToken);
+        TemplateSelectList = BuildSelectList();
+    }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
+        Templates = await templateService.ListAsync(cancellationToken);
+        TemplateSelectList = BuildSelectList();
+
         if (string.IsNullOrWhiteSpace(UserGoal))
         {
             ErrorMessage = "Goal is required.";
@@ -31,6 +51,7 @@ public class SubmitModel(IAssistantRunService service) : PageModel
                 UserGoal,
                 ProjectArea,
                 FileContext,
+                TemplateName,
                 cancellationToken
             );
             var withDraft = await service.GenerateDraftAsync(run.Id, cancellationToken);
@@ -42,4 +63,18 @@ public class SubmitModel(IAssistantRunService service) : PageModel
             return Page();
         }
     }
+
+    private SelectList BuildSelectList() =>
+        new(
+            Templates.Select(t => new
+            {
+                Value = t.Name,
+                Text = string.IsNullOrWhiteSpace(t.Description)
+                    ? t.Name
+                    : $"{t.Name} \u2014 {t.Description}",
+            }),
+            "Value",
+            "Text",
+            TemplateName
+        );
 }

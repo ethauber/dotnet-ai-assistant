@@ -245,6 +245,14 @@ public class AssistantRunServiceTests
 
     private void SetupDraftGeneration(AssistantRun run, string draft) =>
         _repoAssistant
-            .Setup(s => s.RunAsync(run.UserGoal, run.FileContext, run.ProjectArea, default))
-            .ReturnsAsync(draft);
+            .Setup(s =>
+                s.RunAsync(
+                    It.IsAny<string>(),
+                    run.UserGoal,
+                    run.FileContext,
+                    run.ProjectArea,
+                    default
+                )
+            )
+            .ReturnsAsync(new PromptRunResult(draft, "test0000"));
 }

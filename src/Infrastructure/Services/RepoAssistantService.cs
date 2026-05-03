@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -18,7 +19,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
     private const int MaxThrottleRetries = 2;
 
     private readonly HttpClient _httpClient;
-    private readonly string _promptyPath;
+    private readonly string _promptsDirectory;
     private readonly string? _repoRootPath;
     private readonly ILogger<RepoAssistantService> _logger;
 
@@ -27,26 +28,33 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
     public RepoAssistantService(
         HttpClient httpClient,
-        string promptyPath,
+        string promptsDirectory,
         ILogger<RepoAssistantService> logger,
         string? repoRootPath = null
     )
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _promptyPath = promptyPath ?? throw new ArgumentNullException(nameof(promptyPath));
+        _promptsDirectory =
+            promptsDirectory ?? throw new ArgumentNullException(nameof(promptsDirectory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _repoRootPath = repoRootPath;
     }
 
-    public async Task<string> RunAsync(
+    public async Task<PromptRunResult> RunAsync(
+        string templateName,
         string userGoal,
         string? fileContext = null,
         string? projectArea = null,
         CancellationToken cancellationToken = default
     )
     {
-        var prompt = await LoadPromptAsync(cancellationToken);
-        var resolvedContext = await ResolveContextAsync(fileContext, cancellationToken);
+        var promptyPath = Path.Combine(_promptsDirectory, templateName + ".prompty");
+        var (prompt, version) = await LoadPromptAsync(promptyPath, cancellationToken);
+        var resolvedContext = await ResolveContextAsync(
+            templateName,
+            fileContext,
+            cancellationToken
+        );
 
         for (var attempt = 0; attempt <= MaxThrottleRetries; attempt++)
         {
@@ -113,7 +121,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
                                 var assistantContent = content.GetString();
                                 if (!string.IsNullOrWhiteSpace(assistantContent))
                                 {
-                                    return assistantContent;
+                                    return new PromptRunResult(assistantContent, version);
                                 }
                             }
 
@@ -122,7 +130,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
                                 var assistantText = text.GetString();
                                 if (!string.IsNullOrWhiteSpace(assistantText))
                                 {
-                                    return assistantText;
+                                    return new PromptRunResult(assistantText, version);
                                 }
                             }
                         }
@@ -235,41 +243,49 @@ public sealed class RepoAssistantService : IRepoAssistantService
         return request;
     }
 
-    private async Task<PromptyDocument> LoadPromptAsync(CancellationToken cancellationToken)
+    private static async Task<(PromptyDocument doc, string version)> LoadPromptAsync(
+        string promptyPath,
+        CancellationToken cancellationToken
+    )
     {
         try
         {
-            if (!File.Exists(_promptyPath))
+            if (!File.Exists(promptyPath))
             {
-                throw new PromptTemplateNotFoundException(_promptyPath);
+                throw new PromptTemplateNotFoundException(promptyPath);
             }
 
-            var lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
+            var lastWriteTimeUtc = File.GetLastWriteTimeUtc(promptyPath);
             if (
-                PromptCache.TryGetValue(_promptyPath, out var cachedPrompt)
+                PromptCache.TryGetValue(promptyPath, out var cachedPrompt)
                 && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
             )
             {
-                return cachedPrompt.Document;
+                return (cachedPrompt.Document, cachedPrompt.Version);
             }
 
             await PromptCacheLock.WaitAsync(cancellationToken);
             try
             {
-                lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
+                lastWriteTimeUtc = File.GetLastWriteTimeUtc(promptyPath);
                 if (
-                    PromptCache.TryGetValue(_promptyPath, out cachedPrompt)
+                    PromptCache.TryGetValue(promptyPath, out cachedPrompt)
                     && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
                 )
                 {
-                    return cachedPrompt.Document;
+                    return (cachedPrompt.Document, cachedPrompt.Version);
                 }
 
-                var rawPrompt = await File.ReadAllTextAsync(_promptyPath, cancellationToken);
+                var rawPrompt = await File.ReadAllTextAsync(promptyPath, cancellationToken);
                 var prompt = PromptyDocument.Parse(rawPrompt);
-                PromptCache[_promptyPath] = new CachedPromptyDocument(prompt, lastWriteTimeUtc);
+                var version = ComputeVersion(rawPrompt);
+                PromptCache[promptyPath] = new CachedPromptyDocument(
+                    prompt,
+                    lastWriteTimeUtc,
+                    version
+                );
 
-                return prompt;
+                return (prompt, version);
             }
             finally
             {
@@ -278,25 +294,36 @@ public sealed class RepoAssistantService : IRepoAssistantService
         }
         catch (FileNotFoundException)
         {
-            throw new PromptTemplateNotFoundException(_promptyPath);
+            throw new PromptTemplateNotFoundException(promptyPath);
         }
         catch (DirectoryNotFoundException)
         {
-            throw new PromptTemplateNotFoundException(_promptyPath);
+            throw new PromptTemplateNotFoundException(promptyPath);
         }
         catch (IOException)
         {
-            throw new PromptTemplateNotFoundException(_promptyPath);
+            throw new PromptTemplateNotFoundException(promptyPath);
         }
     }
 
+    private static string ComputeVersion(string rawContent)
+    {
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawContent));
+        return Convert.ToHexString(hashBytes)[..8].ToLowerInvariant();
+    }
+
     private async Task<string?> ResolveContextAsync(
+        string templateName,
         string? callerContext,
         CancellationToken cancellationToken
     )
     {
         string? repoContext = null;
-        if (!string.IsNullOrWhiteSpace(_repoRootPath) && Directory.Exists(_repoRootPath))
+        if (
+            templateName == "repo-assistant"
+            && !string.IsNullOrWhiteSpace(_repoRootPath)
+            && Directory.Exists(_repoRootPath)
+        )
         {
             repoContext = await GenerateRepoContextAsync(_repoRootPath, cancellationToken);
         }
@@ -364,7 +391,9 @@ public sealed class RepoAssistantService : IRepoAssistantService
         if (archDocFiles.Length > 0)
         {
             var archDoc = await File.ReadAllTextAsync(archDocPath, cancellationToken);
-            sb.AppendLine("## IMPORTANT: What is already implemented (from docs/repo-assistant.md)");
+            sb.AppendLine(
+                "## IMPORTANT: What is already implemented (from docs/repo-assistant.md)"
+            );
             sb.AppendLine();
             sb.AppendLine(archDoc.TrimEnd());
             sb.AppendLine();
@@ -550,6 +579,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
     private sealed record CachedPromptyDocument(
         PromptyDocument Document,
-        DateTime LastWriteTimeUtc
+        DateTime LastWriteTimeUtc,
+        string Version
     );
 }

@@ -12,10 +12,15 @@ public interface IAssistantRunService
     /// <summary>
     /// Creates a new run in <see cref="AssistantRunStatus.Submitted"/> status and records a Created event.
     /// </summary>
+    /// <param name="promptTemplateName">
+    /// Name of the prompty template to use when generating the draft
+    /// (e.g. <c>"demo-assistant"</c>). Defaults to <c>"demo-assistant"</c> when null.
+    /// </param>
     Task<AssistantRun> CreateAsync(
         string userGoal,
         string? projectArea,
         string? fileContext,
+        string? promptTemplateName = null,
         CancellationToken cancellationToken = default
     );
 

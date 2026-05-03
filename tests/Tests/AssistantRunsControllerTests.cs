@@ -33,10 +33,11 @@ public sealed class AssistantRunsControllerTests
                     It.IsAny<string>(),
                     It.IsAny<string>(),
                     It.IsAny<string>(),
+                    It.IsAny<string>(),
                     It.IsAny<CancellationToken>()
                 )
             )
-            .ReturnsAsync("stub draft");
+            .ReturnsAsync(new PromptRunResult("stub draft", "test0000"));
 
         _factory = factory.WithWebHostBuilder(builder =>
         {

@@ -33,4 +33,16 @@ public class AssistantRun
 
     /// <summary>UTC timestamp of the most recent state change.</summary>
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Name of the prompty template used to generate the draft (e.g. <c>"demo-assistant"</c>).
+    /// Null for runs created before template selection was introduced.
+    /// </summary>
+    public string? PromptTemplateName { get; set; }
+
+    /// <summary>
+    /// First 8 hex characters of the SHA-256 hash of the prompty file content at the time of
+    /// draft generation. Null until <c>GenerateDraftAsync</c> completes.
+    /// </summary>
+    public string? PromptTemplateVersion { get; set; }
 }
