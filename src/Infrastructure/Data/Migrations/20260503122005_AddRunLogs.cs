@@ -15,7 +15,8 @@ namespace Infrastructure.Data.Migrations
                 name: "RunLogs",
                 columns: table => new
                 {
-                    Id = table.Column<long>(type: "INTEGER", nullable: false)
+                    Id = table
+                        .Column<long>(type: "INTEGER", nullable: false)
                         .Annotation("Sqlite:Autoincrement", true),
                     RunId = table.Column<Guid>(type: "TEXT", nullable: true),
                     CorrelationId = table.Column<string>(type: "TEXT", nullable: false),
@@ -23,19 +24,19 @@ namespace Infrastructure.Data.Migrations
                     Level = table.Column<string>(type: "TEXT", nullable: false),
                     RenderedMessage = table.Column<string>(type: "TEXT", nullable: false),
                     SourceContext = table.Column<string>(type: "TEXT", nullable: true),
-                    Exception = table.Column<string>(type: "TEXT", nullable: true)
+                    Exception = table.Column<string>(type: "TEXT", nullable: true),
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_RunLogs", x => x.Id);
-                });
+                }
+            );
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "RunLogs");
+            migrationBuilder.DropTable(name: "RunLogs");
         }
     }
 }
