@@ -65,6 +65,16 @@ public class AssistantRunRepository(AssistantDbContext db) : IAssistantRunReposi
         return events.OrderBy(e => e.OccurredUtc).ToList();
     }
 
+    /// <summary>
+    /// Returns all structured log entries captured for <paramref name="runId"/>, ordered by
+    /// insertion sequence (<c>Id</c> ascending).
+    /// </summary>
+    /// <remarks>
+    /// Queries Serilog's <c>Logs</c> table written by <c>SQLiteLogSink</c> via raw ADO.NET —
+    /// this table is not EF-managed. Uses <c>json_extract(Properties, '$.RunId')</c> to match
+    /// entries. Returns an empty list if the table does not yet exist (e.g. first startup or
+    /// test environments where no logs have been flushed).
+    /// </remarks>
     public async Task<IReadOnlyList<RunLog>> GetLogsForRunAsync(
         Guid runId,
         CancellationToken cancellationToken = default

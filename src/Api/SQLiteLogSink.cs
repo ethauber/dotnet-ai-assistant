@@ -29,6 +29,11 @@ public sealed class SQLiteLogSink(string sqliteDbPath) : IBatchedLogEventSink
         VALUES ($ts, $level, $msg, $props, $ex)
         """;
 
+    /// <summary>
+    /// Writes a batch of log events to the <c>Logs</c> table in a single transaction.
+    /// Creates the table on first call (CREATE TABLE IF NOT EXISTS — idempotent).
+    /// Properties are serialized as a flat JSON object enabling <c>json_extract</c> queries.
+    /// </summary>
     public async Task EmitBatchAsync(IEnumerable<LogEvent> batch)
     {
         await using var conn = new SqliteConnection($"Data Source={sqliteDbPath}");
@@ -63,8 +68,15 @@ public sealed class SQLiteLogSink(string sqliteDbPath) : IBatchedLogEventSink
         await tx.CommitAsync();
     }
 
+    /// <inheritdoc />
     public Task OnEmptyBatchAsync() => Task.CompletedTask;
 
+    /// <summary>
+    /// Serializes Serilog log event properties to a flat JSON object.
+    /// <see cref="ScalarValue"/> instances are unwrapped to their raw CLR value;
+    /// all other value types fall back to their Serilog string representation.
+    /// This format allows SQLite <c>json_extract(Properties, '$.Key')</c> queries.
+    /// </summary>
     private static string SerializeProperties(
         IReadOnlyDictionary<string, LogEventPropertyValue> props
     )
