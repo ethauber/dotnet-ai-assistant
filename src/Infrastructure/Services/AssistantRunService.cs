@@ -78,7 +78,7 @@ public class AssistantRunService(
             UserGoal = userGoal,
             ProjectArea = projectArea,
             FileContext = fileContext,
-            PromptTemplateName = promptTemplateName ?? "demo-assistant",
+            PromptTemplateName = promptTemplateName ?? "goal-assistant",
         };
 
         await repository.AddAsync(run, cancellationToken);
