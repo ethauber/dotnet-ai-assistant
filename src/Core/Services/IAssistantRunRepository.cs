@@ -11,6 +11,15 @@ public interface IAssistantRunRepository
     /// <summary>Persists a new <see cref="AssistantRun"/> and returns it with any store-assigned values.</summary>
     Task<AssistantRun> AddAsync(AssistantRun run, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Persists a new <see cref="AssistantRun"/> and its initial <see cref="AssistantRunEvent"/> atomically.
+    /// </summary>
+    Task<AssistantRun> AddWithEventAsync(
+        AssistantRun run,
+        AssistantRunEvent runEvent,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Returns the run with the given <paramref name="id"/>, or <c>null</c> if not found.</summary>
     Task<AssistantRun?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
@@ -22,6 +31,16 @@ public interface IAssistantRunRepository
 
     /// <summary>Saves all mutations on an already-tracked <see cref="AssistantRun"/>.</summary>
     Task UpdateAsync(AssistantRun run, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Saves all mutations on an already-tracked <see cref="AssistantRun"/> and appends
+    /// an audit <see cref="AssistantRunEvent"/> atomically in a single transaction.
+    /// </summary>
+    Task UpdateWithEventAsync(
+        AssistantRun run,
+        AssistantRunEvent runEvent,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>Appends an audit <see cref="AssistantRunEvent"/> to the event log.</summary>
     Task AddEventAsync(AssistantRunEvent runEvent, CancellationToken cancellationToken = default);

@@ -81,8 +81,8 @@ public class AssistantRunService(
             PromptTemplateName = promptTemplateName ?? "goal-assistant",
         };
 
-        await repository.AddAsync(run, cancellationToken);
-        await repository.AddEventAsync(
+        await repository.AddWithEventAsync(
+            run,
             new AssistantRunEvent
             {
                 RunId = run.Id,
@@ -177,7 +177,7 @@ public class AssistantRunService(
         RequireStatus(run, AssistantRunStatus.NeedsHumanReview);
 
         run.FinalOutput = editedOutput;
-        run.Status = AssistantRunStatus.Approved;
+        run.Status = AssistantRunStatus.Revised;
 
         await CommitAsync(
             run,
@@ -249,8 +249,8 @@ public class AssistantRunService(
     )
     {
         run.UpdatedUtc = DateTimeOffset.UtcNow;
-        await repository.UpdateAsync(run, cancellationToken);
-        await repository.AddEventAsync(
+        await repository.UpdateWithEventAsync(
+            run,
             new AssistantRunEvent
             {
                 RunId = run.Id,

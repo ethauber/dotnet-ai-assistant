@@ -211,7 +211,7 @@ public sealed class AssistantRunsControllerTests
         var body = await response.Content.ReadFromJsonAsync<AssistantRunResponse>();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        body!.Status.Should().Be(nameof(AssistantRunStatus.Approved));
+        body!.Status.Should().Be(nameof(AssistantRunStatus.Revised));
         body.FinalOutput.Should().Be("human edited output");
     }
 

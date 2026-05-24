@@ -23,6 +23,18 @@ public class AssistantRunRepository(AssistantDbContext db) : IAssistantRunReposi
         return run;
     }
 
+    public async Task<AssistantRun> AddWithEventAsync(
+        AssistantRun run,
+        AssistantRunEvent runEvent,
+        CancellationToken cancellationToken = default
+    )
+    {
+        db.AssistantRuns.Add(run);
+        db.AssistantRunEvents.Add(runEvent);
+        await db.SaveChangesAsync(cancellationToken);
+        return run;
+    }
+
     public Task<AssistantRun?> GetByIdAsync(
         Guid id,
         CancellationToken cancellationToken = default
@@ -41,6 +53,17 @@ public class AssistantRunRepository(AssistantDbContext db) : IAssistantRunReposi
     public async Task UpdateAsync(AssistantRun run, CancellationToken cancellationToken = default)
     {
         db.AssistantRuns.Update(run);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateWithEventAsync(
+        AssistantRun run,
+        AssistantRunEvent runEvent,
+        CancellationToken cancellationToken = default
+    )
+    {
+        db.AssistantRuns.Update(run);
+        db.AssistantRunEvents.Add(runEvent);
         await db.SaveChangesAsync(cancellationToken);
     }
 

@@ -48,7 +48,24 @@ public sealed class RepoAssistantService : IRepoAssistantService
         CancellationToken cancellationToken = default
     )
     {
+        // Validate templateName to prevent path traversal attacks.
+        if (
+            templateName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+            || templateName.Contains("..", StringComparison.Ordinal)
+            || templateName.Contains(Path.DirectorySeparatorChar)
+            || templateName.Contains(Path.AltDirectorySeparatorChar)
+        )
+        {
+            throw new ArgumentException("Invalid template name.", nameof(templateName));
+        }
+
         var promptyPath = Path.Combine(_promptsDirectory, templateName + ".prompty");
+        var fullPromptyPath = Path.GetFullPath(promptyPath);
+        var fullPromptsDir = Path.GetFullPath(_promptsDirectory);
+        if (!fullPromptyPath.StartsWith(fullPromptsDir, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Invalid template name.", nameof(templateName));
+        }
         var (prompt, version) = await LoadPromptAsync(promptyPath, cancellationToken);
         var resolvedContext = await ResolveContextAsync(
             templateName,
@@ -210,11 +227,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
                 messages = new[]
                 {
                     new { role = "system", content = renderedPrompt },
-                    new
-                    {
-                        role = "user",
-                        content = BuildUserMessage(userGoal, fileContext, projectArea),
-                    },
+                    new { role = "user", content = BuildUserMessage(userGoal, projectArea) },
                 },
                 temperature = prompt.Temperature,
                 max_tokens = prompt.MaxTokens,
@@ -477,11 +490,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
             sb.AppendLine($"{indent}  {Path.GetFileName(file)}");
     }
 
-    private static string BuildUserMessage(
-        string userGoal,
-        string? fileContext,
-        string? projectArea
-    )
+    private static string BuildUserMessage(string userGoal, string? projectArea)
     {
         var builder = new StringBuilder();
         builder.AppendLine($"User goal: {userGoal}");
@@ -489,12 +498,6 @@ public sealed class RepoAssistantService : IRepoAssistantService
         if (!string.IsNullOrWhiteSpace(projectArea))
         {
             builder.AppendLine($"Project area: {projectArea}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(fileContext))
-        {
-            builder.AppendLine("File context:");
-            builder.AppendLine(fileContext);
         }
 
         return builder.ToString();

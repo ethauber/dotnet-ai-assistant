@@ -28,16 +28,26 @@ public class AssistantRunServiceTests
     public async Task CreateAsync_PersistsRunWithSubmittedStatus()
     {
         _repository
-            .Setup(r => r.AddAsync(It.IsAny<AssistantRun>(), default))
-            .ReturnsAsync((AssistantRun r, CancellationToken _) => r);
+            .Setup(r =>
+                r.AddWithEventAsync(
+                    It.IsAny<AssistantRun>(),
+                    It.IsAny<AssistantRunEvent>(),
+                    default
+                )
+            )
+            .ReturnsAsync((AssistantRun r, AssistantRunEvent _, CancellationToken _) => r);
 
         var run = await _service.CreateAsync("my goal", null, null);
 
         run.Status.Should().Be(AssistantRunStatus.Submitted);
         run.UserGoal.Should().Be("my goal");
-        _repository.Verify(r => r.AddAsync(It.IsAny<AssistantRun>(), default), Times.Once);
         _repository.Verify(
-            r => r.AddEventAsync(It.Is<AssistantRunEvent>(e => e.Action == "Created"), default),
+            r =>
+                r.AddWithEventAsync(
+                    It.IsAny<AssistantRun>(),
+                    It.Is<AssistantRunEvent>(e => e.Action == "Created"),
+                    default
+                ),
             Times.Once
         );
     }
@@ -117,7 +127,8 @@ public class AssistantRunServiceTests
         result.Status.Should().Be(AssistantRunStatus.Rejected);
         _repository.Verify(
             r =>
-                r.AddEventAsync(
+                r.UpdateWithEventAsync(
+                    It.IsAny<AssistantRun>(),
                     It.Is<AssistantRunEvent>(e =>
                         e.Action == "Rejected" && e.Detail == "not good enough"
                     ),
@@ -151,7 +162,7 @@ public class AssistantRunServiceTests
 
         var result = await _service.EditAndApproveAsync(run.Id, "edited output");
 
-        result.Status.Should().Be(AssistantRunStatus.Approved);
+        result.Status.Should().Be(AssistantRunStatus.Revised);
         result.FinalOutput.Should().Be("edited output");
     }
 
@@ -242,6 +253,15 @@ public class AssistantRunServiceTests
         _repository.Setup(r => r.GetByIdAsync(run.Id, default)).ReturnsAsync(run);
         _repository
             .Setup(r => r.UpdateAsync(It.IsAny<AssistantRun>(), default))
+            .Returns(Task.CompletedTask);
+        _repository
+            .Setup(r =>
+                r.UpdateWithEventAsync(
+                    It.IsAny<AssistantRun>(),
+                    It.IsAny<AssistantRunEvent>(),
+                    default
+                )
+            )
             .Returns(Task.CompletedTask);
         _repository
             .Setup(r => r.AddEventAsync(It.IsAny<AssistantRunEvent>(), default))

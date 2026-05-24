@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using Core.Models;
 using Core.Services;
@@ -143,9 +144,31 @@ public sealed class PromptTemplateService(string promptsDirectory) : IPromptTemp
         // Handles both single-line ("name: value") and block scalar ("description: >\n  ...").
         var match = Regex.Match(
             yaml,
-            $@"^[ \t]*{Regex.Escape(key)}:[ \t]*(.+)$",
+            $@"^[ \t]*{Regex.Escape(key)}:[ \t]*(.*)$",
             RegexOptions.Multiline
         );
-        return match.Success ? match.Groups[1].Value.Trim().Trim('"') : string.Empty;
+        if (!match.Success)
+            return string.Empty;
+
+        var inlineValue = match.Groups[1].Value.Trim().Trim('"');
+
+        // If the value is a block scalar indicator (> or |), read indented continuation lines.
+        if (inlineValue is ">" or "|" or ">-" or "|-")
+        {
+            var lines = yaml.Split('\n');
+            var startIndex = yaml[..match.Index].Split('\n').Length; // line after the key
+            var sb = new StringBuilder();
+            for (var i = startIndex; i < lines.Length; i++)
+            {
+                var line = lines[i];
+                // Continuation lines must be indented; a non-indented line ends the block.
+                if (line.Length > 0 && line[0] != ' ' && line[0] != '\t')
+                    break;
+                sb.AppendLine(line.TrimStart());
+            }
+            return sb.ToString().Trim();
+        }
+
+        return inlineValue;
     }
 }

@@ -6,8 +6,11 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace Api.Pages;
 
-public class SubmitModel(IAssistantRunService service, IPromptTemplateService templateService)
-    : PageModel
+public class SubmitModel(
+    IAssistantRunService service,
+    IPromptTemplateService templateService,
+    ILogger<SubmitModel> logger
+) : PageModel
 {
     [BindProperty]
     public string UserGoal { get; set; } = string.Empty;
@@ -59,7 +62,8 @@ public class SubmitModel(IAssistantRunService service, IPromptTemplateService te
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"Failed to generate draft: {ex.Message}";
+            logger.LogError(ex, "Failed to generate draft for user goal");
+            ErrorMessage = "Failed to generate draft. Please try again later.";
             return Page();
         }
     }
