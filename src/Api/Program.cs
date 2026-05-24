@@ -147,7 +147,15 @@ using (var scope = app.Services.CreateScope())
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseSerilogRequestLogging();
 app.UseWhen(
-    context => !context.Request.Path.StartsWithSegments("/api"),
+    context =>
+    {
+        var path = context.Request.Path;
+        // Only apply status code pages to Razor Page routes (not API controllers).
+        return !path.StartsWithSegments("/assistant-runs")
+            && !path.StartsWithSegments("/chat")
+            && !path.StartsWithSegments("/repo-assistant")
+            && !path.StartsWithSegments("/status");
+    },
     appBuilder => appBuilder.UseStatusCodePagesWithReExecute("/error/{0}")
 );
 

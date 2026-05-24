@@ -112,7 +112,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
                             errorBody
                         );
                         throw new UpstreamServiceException(
-                            $"The configured model endpoint returned {(int)response.StatusCode}. Response: {errorBody}",
+                            $"The configured model endpoint returned {(int)response.StatusCode}.",
                             (int)response.StatusCode
                         );
                     }
