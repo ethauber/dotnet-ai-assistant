@@ -5,6 +5,7 @@ using System.Text.Json;
 using Core.Exceptions;
 using FluentAssertions;
 using Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
@@ -13,7 +14,7 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Load_Prompt_And_Return_Assistant_Content()
     {
-        var promptPath = GetPromptPath();
+        var promptsDir = GetPromptsDirectory();
         string? requestPayload = null;
         var handler = new StubHttpMessageHandler(
             async (request, cancellationToken) =>
@@ -29,15 +30,16 @@ public sealed class RepoAssistantServiceTests
                 };
             }
         );
-        var service = new RepoAssistantService(new HttpClient(handler), promptPath);
+        var service = CreateService(handler, promptsDir);
 
         var result = await service.RunAsync(
+            "repo-assistant",
             "Summarize the repo",
             fileContext: "StatusController.cs",
             projectArea: "api"
         );
 
-        result.Should().Be("assistant reply");
+        result.Reply.Should().Be("assistant reply");
         requestPayload.Should().NotBeNull();
 
         using var requestDocument = JsonDocument.Parse(requestPayload!);
@@ -53,16 +55,12 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Prompt_File_Is_Missing()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK))
-                )
-            ),
-            "missing.prompty"
+        var service = CreateService(
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)),
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("nonexistent-template", "Summarize the repo");
 
         await act.Should().ThrowAsync<PromptTemplateNotFoundException>();
     }
@@ -70,16 +68,12 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Returns_NonSuccess_Status()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway))
-                )
-            ),
-            GetPromptPath()
+        var service = CreateService(
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)),
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         var exception = await act.Should().ThrowAsync<UpstreamServiceException>();
         exception.Which.StatusCode.Should().Be((int)HttpStatusCode.BadGateway);
@@ -88,26 +82,18 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Returns_Invalid_Json()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
-                        Task.FromResult(
-                            new HttpResponseMessage(HttpStatusCode.OK)
-                            {
-                                Content = new StringContent(
-                                    "not json",
-                                    Encoding.UTF8,
-                                    "application/json"
-                                ),
-                            }
-                        )
-                )
-            ),
-            GetPromptPath()
+        var service = CreateService(
+            (_, _) =>
+                Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("not json", Encoding.UTF8, "application/json"),
+                    }
+                ),
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         await act.Should()
             .ThrowAsync<UpstreamServiceException>()
@@ -117,26 +103,22 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Returns_No_Assistant_Content()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
-                        Task.FromResult(
-                            new HttpResponseMessage(HttpStatusCode.OK)
-                            {
-                                Content = new StringContent(
-                                    "{\"choices\":[]}",
-                                    Encoding.UTF8,
-                                    "application/json"
-                                ),
-                            }
-                        )
-                )
-            ),
-            GetPromptPath()
+        var service = CreateService(
+            (_, _) =>
+                Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(
+                            "{\"choices\":[]}",
+                            Encoding.UTF8,
+                            "application/json"
+                        ),
+                    }
+                ),
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         await act.Should()
             .ThrowAsync<UpstreamServiceException>()
@@ -147,67 +129,52 @@ public sealed class RepoAssistantServiceTests
     public async Task RunAsync_Should_Retry_When_Upstream_Is_Throttled()
     {
         var attemptCount = 0;
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
+        var service = CreateService(
+            (_, _) =>
+            {
+                attemptCount++;
+                if (attemptCount < 3)
+                {
+                    var throttledResponse = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                    throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(
+                        TimeSpan.Zero
+                    );
+                    return Task.FromResult(throttledResponse);
+                }
+                return Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
                     {
-                        attemptCount++;
-                        if (attemptCount < 3)
-                        {
-                            var throttledResponse = new HttpResponseMessage(
-                                HttpStatusCode.TooManyRequests
-                            );
-                            throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(
-                                TimeSpan.Zero
-                            );
-                            return Task.FromResult(throttledResponse);
-                        }
-
-                        return Task.FromResult(
-                            new HttpResponseMessage(HttpStatusCode.OK)
-                            {
-                                Content = new StringContent(
-                                    "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
-                                    Encoding.UTF8,
-                                    "application/json"
-                                ),
-                            }
-                        );
+                        Content = new StringContent(
+                            "{\"choices\":[{\"message\":{\"content\":\"assistant reply\"}}]}",
+                            Encoding.UTF8,
+                            "application/json"
+                        ),
                     }
-                )
-            ),
-            GetPromptPath()
+                );
+            },
+            GetPromptsDirectory()
         );
 
-        var result = await service.RunAsync("Summarize the repo");
+        var result = await service.RunAsync("repo-assistant", "Summarize the repo");
 
-        result.Should().Be("assistant reply");
+        result.Reply.Should().Be("assistant reply");
         attemptCount.Should().Be(3);
     }
 
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Remains_Throttled()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
-                    {
-                        var throttledResponse = new HttpResponseMessage(
-                            HttpStatusCode.TooManyRequests
-                        );
-                        throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(
-                            TimeSpan.Zero
-                        );
-                        return Task.FromResult(throttledResponse);
-                    }
-                )
-            ),
-            GetPromptPath()
+        var service = CreateService(
+            (_, _) =>
+            {
+                var throttledResponse = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                throttledResponse.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.Zero);
+                return Task.FromResult(throttledResponse);
+            },
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         var exception = await act.Should().ThrowAsync<UpstreamServiceException>();
         exception.Which.StatusCode.Should().Be((int)HttpStatusCode.TooManyRequests);
@@ -216,45 +183,187 @@ public sealed class RepoAssistantServiceTests
     [Fact]
     public async Task RunAsync_Should_Throw_When_Upstream_Returns_Whitespace_Content()
     {
-        var service = new RepoAssistantService(
-            new HttpClient(
-                new StubHttpMessageHandler(
-                    (_, _) =>
-                        Task.FromResult(
-                            new HttpResponseMessage(HttpStatusCode.OK)
-                            {
-                                Content = new StringContent(
-                                    "{\"choices\":[{\"message\":{\"content\":\"   \"}}]}",
-                                    Encoding.UTF8,
-                                    "application/json"
-                                ),
-                            }
-                        )
-                )
-            ),
-            GetPromptPath()
+        var service = CreateService(
+            (_, _) =>
+                Task.FromResult(
+                    new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(
+                            "{\"choices\":[{\"message\":{\"content\":\"   \"}}]}",
+                            Encoding.UTF8,
+                            "application/json"
+                        ),
+                    }
+                ),
+            GetPromptsDirectory()
         );
 
-        var act = () => service.RunAsync("Summarize the repo");
+        var act = () => service.RunAsync("repo-assistant", "Summarize the repo");
 
         await act.Should()
             .ThrowAsync<UpstreamServiceException>()
             .WithMessage("*no assistant content*");
     }
 
-    private static string GetPromptPath()
+    [Fact]
+    public async Task RunAsync_InjectsFileTreeAndSourceIntoRequest_WhenRepoRootProvided()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"repo-ctx-{Guid.NewGuid():N}");
+        var coreDir = Path.Combine(tempRoot, "src", "Core", "Services");
+        Directory.CreateDirectory(coreDir);
+        await File.WriteAllTextAsync(
+            Path.Combine(coreDir, "IMyService.cs"),
+            "public interface IMyService { }"
+        );
+
+        string? capturedBody = null;
+        var handler = new StubHttpMessageHandler(
+            async (req, ct) =>
+            {
+                capturedBody = await req.Content!.ReadAsStringAsync(ct);
+                return OkResponse("ok");
+            }
+        );
+
+        var service = CreateService(handler, GetPromptsDirectory(), repoRootPath: tempRoot);
+        try
+        {
+            await service.RunAsync("repo-assistant", "test goal");
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+
+        capturedBody.Should().Contain("IMyService.cs");
+        capturedBody.Should().Contain("IMyService");
+    }
+
+    [Fact]
+    public async Task RunAsync_ExcludesBinAndObjFromContext()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"repo-ctx-{Guid.NewGuid():N}");
+        var coreDir = Path.Combine(tempRoot, "src", "Core");
+        var binDir = Path.Combine(tempRoot, "src", "Core", "bin", "Debug");
+        var objDir = Path.Combine(tempRoot, "src", "Core", "obj", "net10.0");
+        Directory.CreateDirectory(coreDir);
+        Directory.CreateDirectory(binDir);
+        Directory.CreateDirectory(objDir);
+        await File.WriteAllTextAsync(Path.Combine(coreDir, "IReal.cs"), "// real");
+        await File.WriteAllTextAsync(Path.Combine(binDir, "Compiled.cs"), "// should not appear");
+        await File.WriteAllTextAsync(Path.Combine(objDir, "Generated.cs"), "// should not appear");
+
+        string? capturedBody = null;
+        var handler = new StubHttpMessageHandler(
+            async (req, ct) =>
+            {
+                capturedBody = await req.Content!.ReadAsStringAsync(ct);
+                return OkResponse("ok");
+            }
+        );
+
+        var service = CreateService(handler, GetPromptsDirectory(), repoRootPath: tempRoot);
+        try
+        {
+            await service.RunAsync("repo-assistant", "test");
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+
+        capturedBody.Should().Contain("IReal.cs");
+        capturedBody.Should().NotContain("Compiled.cs");
+        capturedBody.Should().NotContain("Generated.cs");
+    }
+
+    [Fact]
+    public async Task RunAsync_AppendsCallerContextAfterRepoContext()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"repo-ctx-{Guid.NewGuid():N}");
+        var coreDir = Path.Combine(tempRoot, "src", "Core");
+        Directory.CreateDirectory(coreDir);
+        await File.WriteAllTextAsync(Path.Combine(coreDir, "ISvc.cs"), "// repo content");
+
+        string? capturedBody = null;
+        var handler = new StubHttpMessageHandler(
+            async (req, ct) =>
+            {
+                capturedBody = await req.Content!.ReadAsStringAsync(ct);
+                return OkResponse("ok");
+            }
+        );
+
+        var service = CreateService(handler, GetPromptsDirectory(), repoRootPath: tempRoot);
+        try
+        {
+            await service.RunAsync(
+                "repo-assistant",
+                "test",
+                fileContext: "CALLER_SPECIFIC_SNIPPET"
+            );
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+
+        capturedBody.Should().Contain("ISvc.cs");
+        capturedBody.Should().Contain("CALLER_SPECIFIC_SNIPPET");
+        capturedBody!
+            .IndexOf("ISvc.cs", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(capturedBody.IndexOf("CALLER_SPECIFIC_SNIPPET", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_WorksNormally_WhenNoRepoRootProvided()
+    {
+        var service = CreateService(
+            (_, _) => Task.FromResult(OkResponse("reply without repo context")),
+            GetPromptsDirectory()
+        );
+
+        var result = await service.RunAsync(
+            "repo-assistant",
+            "test goal",
+            fileContext: "some snippet"
+        );
+
+        result.Reply.Should().Be("reply without repo context");
+    }
+
+    private static RepoAssistantService CreateService(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder,
+        string promptsDirectory
+    ) => CreateService(new StubHttpMessageHandler(responder), promptsDirectory);
+
+    private static RepoAssistantService CreateService(
+        StubHttpMessageHandler handler,
+        string promptsDirectory,
+        string? repoRootPath = null
+    ) =>
+        new(
+            new HttpClient(handler),
+            promptsDirectory,
+            NullLogger<RepoAssistantService>.Instance,
+            repoRootPath
+        );
+
+    private static HttpResponseMessage OkResponse(string content) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $"{{\"choices\":[{{\"message\":{{\"content\":\"{content}\"}}}}]}}",
+                Encoding.UTF8,
+                "application/json"
+            ),
+        };
+
+    private static string GetPromptsDirectory()
     {
         return Path.GetFullPath(
-            Path.Combine(
-                AppContext.BaseDirectory,
-                "..",
-                "..",
-                "..",
-                "..",
-                "..",
-                "prompts",
-                "repo-assistant.prompty"
-            )
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "prompts")
         );
     }
 

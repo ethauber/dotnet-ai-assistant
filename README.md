@@ -10,7 +10,8 @@ across API, Core, and Infrastructure projects.
 - Health endpoint is implemented and integration tested.
 - Semantic Kernel chat endpoint is implemented and unit tested.
 - Prompt-driven repo assistant endpoint is implemented and tested.
-- OpenAPI is enabled in development and exposed via Scalar.
+- OpenAPI is enabled in development and exposed via Scalar (opens automatically on `dotnet run`).
+- Structured logging via Serilog with correlation ID middleware on every request.
 - Step-by-step implementation plan docs are now in `docs/plans/`.
 
 ## Implemented Endpoints
@@ -34,11 +35,23 @@ dotnet restore
 dotnet build
 ```
 
-2. Configure local secret for Semantic Kernel API key:
+2. Configure secrets for the chat model:
+
+**Option A — OpenAI:**
 
 ```bash
-dotnet user-secrets init --project src/Api
-dotnet user-secrets set "SemanticKernel:ApiKey" "<your-api-key>" --project src/Api
+dotnet user-secrets set "SemanticKernel:ApiKey" "<your-openai-key>" --project src/Api
+```
+
+**Option B — Ollama (local, no API key required):**
+
+```bash
+ollama serve          # start Ollama if not already running
+ollama pull gemma3:4b  # or any model you prefer
+
+dotnet user-secrets set "SemanticKernel:ApiKey" "ollama" --project src/Api
+dotnet user-secrets set "SemanticKernel:ModelId" "gemma3:4b" --project src/Api
+dotnet user-secrets set "SemanticKernel:Endpoint" "http://localhost:11434/v1" --project src/Api
 ```
 
 3. Run the API:
@@ -47,10 +60,12 @@ dotnet user-secrets set "SemanticKernel:ApiKey" "<your-api-key>" --project src/A
 dotnet run --project src/Api/Api.csproj
 ```
 
+The browser opens automatically at `http://localhost:50123/scalar/v1`.
+
 4. Explore API docs:
 
-- OpenAPI: `http://localhost:5176/openapi/v1.json`
-- Scalar UI (development): available when running locally in Development
+- OpenAPI: `http://localhost:50123/openapi/v1.json`
+- Scalar UI (development): `http://localhost:50123/scalar/v1`
 
 5. Run static analysis before pushing:
 
@@ -63,13 +78,13 @@ semgrep scan --config auto --config semgrep-rules.yml .
 Health check:
 
 ```bash
-curl -s http://localhost:5176/status | jq .
+curl -s http://localhost:50123/status | jq .
 ```
 
 Chat completion:
 
 ```bash
-curl -s -X POST http://localhost:5176/chat \
+curl -s -X POST http://localhost:50123/chat \
 	-H "Content-Type: application/json" \
 	-d '{"message":"Say hello in one sentence"}' | jq .
 ```
@@ -77,7 +92,7 @@ curl -s -X POST http://localhost:5176/chat \
 Repo assistant:
 
 ```bash
-curl -s -X POST http://localhost:5176/repo-assistant/run \
+curl -s -X POST http://localhost:50123/repo-assistant/run \
 	-H "Content-Type: application/json" \
 	-d '{"userGoal":"Summarize the API layer","projectArea":"api"}' | jq .
 ```
@@ -104,9 +119,12 @@ The solution follows a Clean Architecture flow:
 ```json
 "SemanticKernel": {
 	"ModelId": "gpt-4o-mini",
-	"ApiKey": ""
+	"ApiKey": "",
+	"Endpoint": ""
 }
 ```
+
+`SemanticKernel:Endpoint` is optional. Omit it for OpenAI. Set it to `http://localhost:11434/v1` for Ollama or any other OpenAI-compatible local endpoint.
 
 Keep `SemanticKernel:ApiKey` in User Secrets for local development and out of
 source control.
@@ -138,21 +156,6 @@ semgrep scan --config auto --config semgrep-rules.yml .
 ```
 
 Custom rules live in `semgrep-rules.yml`. Treat these scans as a local pre-push requirement for now.
-
-## Project Structure
-
-```text
-dotnet-ai-assistant/
-├── src/
-│   ├── Api/
-│   ├── Core/
-│   └── Infrastructure/
-├── tests/
-│   └── Tests/
-├── docs/
-│   └── plans/
-└── dotnet-ai-assistant.sln
-```
 
 ## Plans And Iteration
 

@@ -1,0 +1,14 @@
+@page "/error/{statusCode:int?}"
+@model ErrorModel
+@{
+    ViewData["Title"] = Model.StatusCode == 404 ? "Not Found" : "Error";
+}
+
+<div class="card" style="text-align:center;padding:3rem 2rem;">
+    <div style="font-size:3rem;font-weight:800;color:#ccc;margin-bottom:0.5rem;">@Model.StatusCode</div>
+    <h1 style="margin-bottom:0.5rem;">@Model.Title</h1>
+    <p style="color:#666;margin-bottom:2rem;">@Model.Description</p>
+    <a asp-page="/Index" class="btn btn-secondary">← Back to Home</a>
+    &nbsp;
+    <a asp-page="/Runs" class="btn btn-secondary">Recent Runs</a>
+</div>

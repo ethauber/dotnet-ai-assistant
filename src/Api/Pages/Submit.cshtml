@@ -1,0 +1,82 @@
+@page
+@model SubmitModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = "New Run";
+    var templatesJson = JsonSerializer.Serialize(Model.Templates);
+}
+
+<h1>New Assistant Run</h1>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-error">@Model.ErrorMessage</div>
+}
+
+<div class="card">
+    <form method="post">
+        <div class="field-group">
+            <label asp-for="TemplateName">Assistant Template</label>
+            <select asp-for="TemplateName" asp-items="Model.TemplateSelectList" id="TemplateName"></select>
+        </div>
+        <div class="field-group">
+            <label asp-for="UserGoal">Goal <span style="color:red">*</span></label>
+            <input asp-for="UserGoal" type="text"
+                   placeholder="e.g. Summarise the API architecture and propose one improvement" required />
+        </div>
+        <div id="field-file-context" class="field-group">
+            <label asp-for="FileContext">Context <span class="meta">(optional &mdash; paste relevant code or notes)</span></label>
+            <textarea asp-for="FileContext" rows="8"
+                      placeholder="Paste any relevant code snippets or context here..."></textarea>
+        </div>
+        <div id="field-project-area" class="field-group" style="display:none">
+            <label asp-for="ProjectArea">Project Area <span class="meta">(optional)</span></label>
+            <input asp-for="ProjectArea" type="text" placeholder="e.g. Infrastructure, API, Tests" />
+        </div>
+        <button id="submit-btn" type="submit" class="btn btn-primary">Submit &amp; Generate Draft</button>
+        <div id="spinner" style="display:none; margin-top:1rem;">
+            <span class="spinner"></span> Generating draft &mdash; this may take up to a minute&hellip;
+        </div>
+    </form>
+</div>
+
+<style>
+.spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid #ccc;
+    border-top-color: #555;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 0.4rem;
+}
+@@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script id="templates-data" type="application/json">@Html.Raw(templatesJson)</script>
+<script>
+(function () {
+    const templates = JSON.parse(document.getElementById('templates-data').textContent);
+
+    function updateFields(templateName) {
+        const template = templates.find(t => t.Name === templateName);
+        const inputKeys = template ? template.Inputs.map(i => i.Key) : ['user_goal', 'file_context'];
+
+        document.getElementById('field-file-context').style.display =
+            inputKeys.includes('file_context') ? '' : 'none';
+        document.getElementById('field-project-area').style.display =
+            inputKeys.includes('project_area') ? '' : 'none';
+    }
+
+    const select = document.getElementById('TemplateName');
+    select.addEventListener('change', function () { updateFields(this.value); });
+    updateFields(select.value);
+
+    document.querySelector('form').addEventListener('submit', function () {
+        document.getElementById('submit-btn').disabled = true;
+        document.getElementById('spinner').style.display = 'block';
+    });
+}());
+</script>

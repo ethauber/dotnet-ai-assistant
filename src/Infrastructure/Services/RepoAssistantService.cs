@@ -2,11 +2,13 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Core.Exceptions;
 using Core.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services;
 
@@ -17,26 +19,63 @@ public sealed class RepoAssistantService : IRepoAssistantService
     private const int MaxThrottleRetries = 2;
 
     private readonly HttpClient _httpClient;
-    private readonly string _promptyPath;
+    private readonly string _promptsDirectory;
+    private readonly string? _repoRootPath;
+    private readonly ILogger<RepoAssistantService> _logger;
 
-    public RepoAssistantService(HttpClient httpClient, string promptyPath)
+    // Simple single-entry cache: stamp is the max LastWriteTimeUtc of watched files.
+    private (DateTime Stamp, string Context) _contextCache;
+
+    public RepoAssistantService(
+        HttpClient httpClient,
+        string promptsDirectory,
+        ILogger<RepoAssistantService> logger,
+        string? repoRootPath = null
+    )
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _promptyPath = promptyPath ?? throw new ArgumentNullException(nameof(promptyPath));
+        _promptsDirectory =
+            promptsDirectory ?? throw new ArgumentNullException(nameof(promptsDirectory));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _repoRootPath = repoRootPath;
     }
 
-    public async Task<string> RunAsync(
+    public async Task<PromptRunResult> RunAsync(
+        string templateName,
         string userGoal,
         string? fileContext = null,
         string? projectArea = null,
         CancellationToken cancellationToken = default
     )
     {
-        var prompt = await LoadPromptAsync(cancellationToken);
+        // Validate templateName to prevent path traversal attacks.
+        if (
+            templateName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+            || templateName.Contains("..", StringComparison.Ordinal)
+            || templateName.Contains(Path.DirectorySeparatorChar)
+            || templateName.Contains(Path.AltDirectorySeparatorChar)
+        )
+        {
+            throw new ArgumentException("Invalid template name.", nameof(templateName));
+        }
+
+        var promptyPath = Path.Combine(_promptsDirectory, templateName + ".prompty");
+        var fullPromptyPath = Path.GetFullPath(promptyPath);
+        var fullPromptsDir = Path.GetFullPath(_promptsDirectory);
+        if (!fullPromptyPath.StartsWith(fullPromptsDir, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Invalid template name.", nameof(templateName));
+        }
+        var (prompt, version) = await LoadPromptAsync(promptyPath, cancellationToken);
+        var resolvedContext = await ResolveContextAsync(
+            templateName,
+            fileContext,
+            cancellationToken
+        );
 
         for (var attempt = 0; attempt <= MaxThrottleRetries; attempt++)
         {
-            using var request = BuildRequest(prompt, userGoal, fileContext, projectArea);
+            using var request = BuildRequest(prompt, userGoal, resolvedContext, projectArea);
 
             try
             {
@@ -62,8 +101,18 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
                     if (!response.IsSuccessStatusCode)
                     {
+                        var errorBody = response.Content is not null
+                            ? await response.Content.ReadAsStringAsync(cancellationToken)
+                            : string.Empty;
+                        _logger.LogWarning(
+                            "Upstream model endpoint returned {StatusCode}. Model={Model} Endpoint={Endpoint} Body={ResponseBody}",
+                            (int)response.StatusCode,
+                            prompt.Model,
+                            prompt.Endpoint,
+                            errorBody
+                        );
                         throw new UpstreamServiceException(
-                            "The configured model endpoint returned a non-success response.",
+                            $"The configured model endpoint returned {(int)response.StatusCode}.",
                             (int)response.StatusCode
                         );
                     }
@@ -89,7 +138,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
                                 var assistantContent = content.GetString();
                                 if (!string.IsNullOrWhiteSpace(assistantContent))
                                 {
-                                    return assistantContent;
+                                    return new PromptRunResult(assistantContent, version);
                                 }
                             }
 
@@ -98,7 +147,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
                                 var assistantText = text.GetString();
                                 if (!string.IsNullOrWhiteSpace(assistantText))
                                 {
-                                    return assistantText;
+                                    return new PromptRunResult(assistantText, version);
                                 }
                             }
                         }
@@ -178,11 +227,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
                 messages = new[]
                 {
                     new { role = "system", content = renderedPrompt },
-                    new
-                    {
-                        role = "user",
-                        content = BuildUserMessage(userGoal, fileContext, projectArea),
-                    },
+                    new { role = "user", content = BuildUserMessage(userGoal, projectArea) },
                 },
                 temperature = prompt.Temperature,
                 max_tokens = prompt.MaxTokens,
@@ -194,6 +239,15 @@ public sealed class RepoAssistantService : IRepoAssistantService
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
         };
 
+        _logger.LogDebug(
+            "Sending request to {Endpoint} — model={Model} temperature={Temperature} max_tokens={MaxTokens} body={Body}",
+            prompt.Endpoint,
+            prompt.Model,
+            prompt.Temperature,
+            prompt.MaxTokens,
+            body
+        );
+
         if (!string.IsNullOrWhiteSpace(prompt.ApiKey))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", prompt.ApiKey);
@@ -202,41 +256,49 @@ public sealed class RepoAssistantService : IRepoAssistantService
         return request;
     }
 
-    private async Task<PromptyDocument> LoadPromptAsync(CancellationToken cancellationToken)
+    private static async Task<(PromptyDocument doc, string version)> LoadPromptAsync(
+        string promptyPath,
+        CancellationToken cancellationToken
+    )
     {
         try
         {
-            if (!File.Exists(_promptyPath))
+            if (!File.Exists(promptyPath))
             {
-                throw new PromptTemplateNotFoundException(_promptyPath);
+                throw new PromptTemplateNotFoundException(promptyPath);
             }
 
-            var lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
+            var lastWriteTimeUtc = File.GetLastWriteTimeUtc(promptyPath);
             if (
-                PromptCache.TryGetValue(_promptyPath, out var cachedPrompt)
+                PromptCache.TryGetValue(promptyPath, out var cachedPrompt)
                 && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
             )
             {
-                return cachedPrompt.Document;
+                return (cachedPrompt.Document, cachedPrompt.Version);
             }
 
             await PromptCacheLock.WaitAsync(cancellationToken);
             try
             {
-                lastWriteTimeUtc = File.GetLastWriteTimeUtc(_promptyPath);
+                lastWriteTimeUtc = File.GetLastWriteTimeUtc(promptyPath);
                 if (
-                    PromptCache.TryGetValue(_promptyPath, out cachedPrompt)
+                    PromptCache.TryGetValue(promptyPath, out cachedPrompt)
                     && cachedPrompt.LastWriteTimeUtc == lastWriteTimeUtc
                 )
                 {
-                    return cachedPrompt.Document;
+                    return (cachedPrompt.Document, cachedPrompt.Version);
                 }
 
-                var rawPrompt = await File.ReadAllTextAsync(_promptyPath, cancellationToken);
+                var rawPrompt = await File.ReadAllTextAsync(promptyPath, cancellationToken);
                 var prompt = PromptyDocument.Parse(rawPrompt);
-                PromptCache[_promptyPath] = new CachedPromptyDocument(prompt, lastWriteTimeUtc);
+                var version = ComputeVersion(rawPrompt);
+                PromptCache[promptyPath] = new CachedPromptyDocument(
+                    prompt,
+                    lastWriteTimeUtc,
+                    version
+                );
 
-                return prompt;
+                return (prompt, version);
             }
             finally
             {
@@ -245,23 +307,190 @@ public sealed class RepoAssistantService : IRepoAssistantService
         }
         catch (FileNotFoundException)
         {
-            throw new PromptTemplateNotFoundException(_promptyPath);
+            throw new PromptTemplateNotFoundException(promptyPath);
         }
         catch (DirectoryNotFoundException)
         {
-            throw new PromptTemplateNotFoundException(_promptyPath);
+            throw new PromptTemplateNotFoundException(promptyPath);
         }
         catch (IOException)
         {
-            throw new PromptTemplateNotFoundException(_promptyPath);
+            throw new PromptTemplateNotFoundException(promptyPath);
         }
     }
 
-    private static string BuildUserMessage(
-        string userGoal,
-        string? fileContext,
-        string? projectArea
+    private static string ComputeVersion(string rawContent)
+    {
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawContent));
+        return Convert.ToHexString(hashBytes)[..8].ToLowerInvariant();
+    }
+
+    private async Task<string?> ResolveContextAsync(
+        string templateName,
+        string? callerContext,
+        CancellationToken cancellationToken
     )
+    {
+        string? repoContext = null;
+        if (
+            templateName == "repo-assistant"
+            && !string.IsNullOrWhiteSpace(_repoRootPath)
+            && Directory.Exists(_repoRootPath)
+        )
+        {
+            repoContext = await GenerateRepoContextAsync(_repoRootPath, cancellationToken);
+        }
+
+        if (string.IsNullOrWhiteSpace(repoContext))
+            return callerContext;
+
+        if (string.IsNullOrWhiteSpace(callerContext))
+            return repoContext;
+
+        return repoContext + "\n\n---\n\n" + callerContext;
+    }
+
+    private async Task<string> GenerateRepoContextAsync(
+        string repoRoot,
+        CancellationToken cancellationToken
+    )
+    {
+        static bool IsProductionCode(string path) =>
+            !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+            && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}");
+
+        var srcDir = Path.Combine(repoRoot, "src");
+        var testsDir = Path.Combine(repoRoot, "tests");
+
+        // Full content: every .cs file under src/ (Core, Infrastructure, Api)
+        var contentFiles = Directory.Exists(srcDir)
+            ? Directory
+                .EnumerateFiles(srcDir, "*.cs", SearchOption.AllDirectories)
+                .Where(IsProductionCode)
+                .OrderBy(f => f)
+                .ToList()
+            : [];
+
+        // Test files — listed by name only to prove coverage without consuming tokens.
+        var testFiles = Directory.Exists(testsDir)
+            ? Directory
+                .EnumerateFiles(testsDir, "*.cs", SearchOption.AllDirectories)
+                .Where(IsProductionCode)
+                .OrderBy(f => f)
+                .ToList()
+            : [];
+
+        // Architecture doc drives the manifest — cache invalidates when the doc changes.
+        var archDocPath = Path.Combine(repoRoot, "docs", "repo-assistant.md");
+        var archDocFiles = File.Exists(archDocPath) ? [archDocPath] : Array.Empty<string>();
+
+        // Cache invalidation: max LastWriteTimeUtc across all watched files.
+        var allWatched = contentFiles.Concat(testFiles).Concat(archDocFiles).ToList();
+        var stamp =
+            allWatched.Count > 0
+                ? allWatched.Max(f => File.GetLastWriteTimeUtc(f))
+                : DateTime.MinValue;
+        lock (this)
+        {
+            if (_contextCache.Stamp == stamp && !string.IsNullOrEmpty(_contextCache.Context))
+                return _contextCache.Context;
+        }
+
+        var sb = new StringBuilder();
+
+        // ── MANIFEST (always first — survives context-window truncation) ──────────
+        // Sourced from docs/repo-assistant.md so the model always sees an accurate,
+        // human-maintained description of what is already implemented.
+        if (archDocFiles.Length > 0)
+        {
+            var archDoc = await File.ReadAllTextAsync(archDocPath, cancellationToken);
+            sb.AppendLine(
+                "## IMPORTANT: What is already implemented (from docs/repo-assistant.md)"
+            );
+            sb.AppendLine();
+            sb.AppendLine(archDoc.TrimEnd());
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"### Tests ({testFiles.Count} test files)");
+        foreach (var f in testFiles)
+            sb.AppendLine($"- {Path.GetRelativePath(repoRoot, f)}");
+        sb.AppendLine();
+        sb.AppendLine("---");
+        sb.AppendLine();
+
+        // ── FILE TREE ─────────────────────────────────────────────────────────────
+        sb.AppendLine("## Source file tree");
+        sb.AppendLine("```");
+        if (Directory.Exists(srcDir))
+            AppendTree(sb, srcDir, repoRoot, 0);
+        sb.AppendLine("```");
+
+        // ── ROSLYN AST ────────────────────────────────────────────────────────────
+        // Structural summaries: type declarations, base types, property and method
+        // signatures for every production file. Compact and token-efficient.
+        sb.AppendLine("\n## Structural API surface (Roslyn AST)");
+        foreach (var file in contentFiles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relativePath = Path.GetRelativePath(repoRoot, file);
+            var source = await File.ReadAllTextAsync(file, cancellationToken);
+            var summary = RoslynAstExtractor.ExtractSummary(source);
+            if (string.IsNullOrWhiteSpace(summary))
+                continue;
+            sb.AppendLine($"\n### {relativePath}");
+            sb.AppendLine("```");
+            sb.AppendLine(summary);
+            sb.AppendLine("```");
+        }
+
+        // ── CORE CONTRACTS (verbatim) ─────────────────────────────────────────────
+        // Full source for Core only — the contracts the model must write against precisely.
+        var coreDir = Path.Combine(repoRoot, "src", "Core");
+        var coreFiles = contentFiles
+            .Where(f => f.StartsWith(coreDir, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (coreFiles.Count > 0)
+        {
+            sb.AppendLine("\n## Full source: Core contracts");
+            foreach (var file in coreFiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var relativePath = Path.GetRelativePath(repoRoot, file);
+                var content = await File.ReadAllTextAsync(file, cancellationToken);
+                sb.AppendLine($"\n### {relativePath}");
+                sb.AppendLine("```csharp");
+                sb.AppendLine(content.TrimEnd());
+                sb.AppendLine("```");
+            }
+        }
+
+        var result = sb.ToString();
+        lock (this)
+        {
+            _contextCache = (stamp, result);
+        }
+        return result;
+    }
+
+    private static void AppendTree(StringBuilder sb, string dir, string repoRoot, int depth)
+    {
+        var indent = new string(' ', depth * 2);
+        var dirName = Path.GetFileName(dir);
+        if (dirName is "bin" or "obj")
+            return;
+
+        if (depth > 0)
+            sb.AppendLine($"{indent}{dirName}/");
+
+        foreach (var subDir in Directory.EnumerateDirectories(dir).OrderBy(d => d))
+            AppendTree(sb, subDir, repoRoot, depth + 1);
+
+        foreach (var file in Directory.EnumerateFiles(dir).OrderBy(f => f))
+            sb.AppendLine($"{indent}  {Path.GetFileName(file)}");
+    }
+
+    private static string BuildUserMessage(string userGoal, string? projectArea)
     {
         var builder = new StringBuilder();
         builder.AppendLine($"User goal: {userGoal}");
@@ -269,12 +498,6 @@ public sealed class RepoAssistantService : IRepoAssistantService
         if (!string.IsNullOrWhiteSpace(projectArea))
         {
             builder.AppendLine($"Project area: {projectArea}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(fileContext))
-        {
-            builder.AppendLine("File context:");
-            builder.AppendLine(fileContext);
         }
 
         return builder.ToString();
@@ -333,7 +556,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
         {
             var match = Regex.Match(
                 yaml,
-                $"^\\s*{Regex.Escape(key)}:\\s*(.+)$",
+                $"^\\s*{Regex.Escape(key)}:[ \\t]*(.+)$",
                 RegexOptions.Multiline
             );
             return match.Success ? match.Groups[1].Value.Trim().Trim('"') : string.Empty;
@@ -359,6 +582,7 @@ public sealed class RepoAssistantService : IRepoAssistantService
 
     private sealed record CachedPromptyDocument(
         PromptyDocument Document,
-        DateTime LastWriteTimeUtc
+        DateTime LastWriteTimeUtc,
+        string Version
     );
 }

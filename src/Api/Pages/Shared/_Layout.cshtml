@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] — AI Assistant</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; margin: 0; background: #f5f5f5; color: #1a1a1a; }
+        header { background: #1a1a2e; color: #fff; padding: 1rem 2rem; display: flex; align-items: center; gap: 2rem; }
+        header a { color: #a0c4ff; text-decoration: none; font-size: 0.95rem; }
+        header a:hover { text-decoration: underline; }
+        header .brand { font-weight: 700; font-size: 1.1rem; color: #fff; }
+        main { max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; }
+        h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+        h2 { font-size: 1.2rem; color: #333; }
+        .card { background: #fff; border-radius: 8px; padding: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 1.5rem; }
+        label { display: block; font-weight: 600; margin-bottom: 0.3rem; font-size: 0.9rem; }
+        input[type=text], textarea, select { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; font-family: inherit; }
+        textarea { resize: vertical; }
+        .btn { display: inline-block; padding: 0.5rem 1.2rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; }
+        .btn-primary { background: #1a6cff; color: #fff; }
+        .btn-success { background: #1a8a3a; color: #fff; }
+        .btn-danger  { background: #cc2200; color: #fff; }
+        .btn-warning { background: #d68000; color: #fff; }
+        .btn-secondary { background: #555; color: #fff; }
+        .btn:hover { opacity: 0.88; }
+        .status-badge { display: inline-block; padding: 0.2rem 0.7rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; }
+        .status-Submitted        { background: #dde; color: #336; }
+        .status-DraftGenerated   { background: #ddf; color: #339; }
+        .status-NeedsHumanReview { background: #fff3cd; color: #856404; }
+        .status-Approved         { background: #d4edda; color: #155724; }
+        .status-Rejected         { background: #f8d7da; color: #721c24; }
+        .status-Revised          { background: #d1ecf1; color: #0c5460; }
+        .field-group { margin-bottom: 1rem; }
+        .draft-box { background: #f0f4ff; border: 1px solid #b0c4ff; border-radius: 6px; padding: 1rem; white-space: pre-wrap; font-size: 0.9rem; line-height: 1.6; }
+        .meta { font-size: 0.8rem; color: #666; }
+        .alert { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+<header>
+    <span class="brand">AI Assistant</span>
+    <a asp-page="/Index">Home</a>
+    <a asp-page="/Submit">New Run</a>
+    <a asp-page="/Runs">Recent Runs</a>
+</header>
+<main>
+    @RenderBody()
+</main>
+</body>
+</html>

@@ -3,6 +3,11 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Infrastructure.Services;
 
+/// <summary>
+/// Single-turn chat implementation backed by Semantic Kernel's <see cref="IChatCompletionService"/>.
+/// Supports any OpenAI-compatible endpoint (Ollama, Azure OpenAI, OpenAI). Registered in DI
+/// when <c>SemanticKernel:ModelId</c> and <c>SemanticKernel:ApiKey</c> are configured.
+/// </summary>
 public class SemanticKernelChatService : IChatService
 {
     private readonly IChatCompletionService _chatCompletion;

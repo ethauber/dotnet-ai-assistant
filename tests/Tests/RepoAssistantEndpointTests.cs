@@ -117,14 +117,15 @@ public sealed class RepoAssistantEndpointTests : IClassFixture<WebApplicationFac
             _responder = responder;
         }
 
-        public Task<string> RunAsync(
+        public Task<PromptRunResult> RunAsync(
+            string templateName,
             string userGoal,
             string? fileContext = null,
             string? projectArea = null,
             CancellationToken cancellationToken = default
         )
         {
-            return Task.FromResult(_responder(userGoal));
+            return Task.FromResult(new PromptRunResult(_responder(userGoal), "test0000"));
         }
     }
 }

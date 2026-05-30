@@ -1,0 +1,55 @@
+@page
+@model RunsModel
+@{
+    ViewData["Title"] = "Recent Runs";
+}
+
+<h1>Recent Runs</h1>
+
+<p style="margin-bottom:1rem;"><a asp-page="/Submit" class="btn btn-primary">+ New Run</a></p>
+
+@if (!Model.Runs.Any())
+{
+    <div class="card">
+        <p>No runs yet. <a asp-page="/Submit">Submit your first goal.</a></p>
+    </div>
+}
+else
+{
+    <div class="card" style="padding:0;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+            <thead>
+                <tr style="background:#f0f0f0;text-align:left;">
+                    <th style="padding:0.75rem 1rem;">Goal</th>
+                    <th style="padding:0.75rem 1rem;">Template</th>
+                    <th style="padding:0.75rem 1rem;">Status</th>
+                    <th style="padding:0.75rem 1rem;">Created</th>
+                    <th style="padding:0.75rem 1rem;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var run in Model.Runs)
+                {
+                    <tr style="border-top:1px solid #eee;">
+                        <td
+                            style="padding:0.75rem 1rem;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                            @run.UserGoal</td>
+                            <td style="padding:0.75rem 1rem;" class="meta">
+                                @if (run.PromptTemplateName is not null)
+                                {
+                                    <code>@run.PromptTemplateName</code>
+                                    @if (run.PromptTemplateVersion is not null)
+                                    {
+                                        <span class="meta" style="font-size:0.75rem;"> @run.PromptTemplateVersion</span>
+                                    }
+                                }
+                            </td>
+                            <td style="padding:0.75rem 1rem;"><span class="status-badge status-@run.Status">@run.Status</span></td>
+                            <td style="padding:0.75rem 1rem;" class="meta">@run.CreatedUtc.ToLocalTime().ToString("g")</td>
+                            <td style="padding:0.75rem 1rem;"><a asp-page="/Review" asp-route-id="@run.Id">Review →</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }

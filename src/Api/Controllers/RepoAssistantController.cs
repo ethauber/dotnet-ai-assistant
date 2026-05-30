@@ -43,14 +43,15 @@ public sealed class RepoAssistantController : ControllerBase
     {
         try
         {
-            var reply = await _repoAssistantService.RunAsync(
+            var result = await _repoAssistantService.RunAsync(
+                request.TemplateName ?? "repo-assistant",
                 request.UserGoal,
                 request.FileContext,
                 request.ProjectArea,
                 cancellationToken
             );
 
-            return Ok(new RepoAssistantResponse(reply));
+            return Ok(new RepoAssistantResponse(result.Reply));
         }
         catch (PromptTemplateNotFoundException exception)
         {
